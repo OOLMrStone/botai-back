@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -17,11 +18,18 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,7 +38,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * CSRF bootstrap, registration, login (session cookie), authenticated request,
  * logout, and the relevant failure paths.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "management.server.port=0")
 @AutoConfigureTestRestTemplate
 @Testcontainers
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -40,14 +50,29 @@ class AuthFlowIntegrationTest {
     @ServiceConnection
     static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
+    // Real SMTP sink: the tests read the one-time codes out of actual emails.
+    @Container
+    static GenericContainer<?> mailpit = new GenericContainer<>("axllent/mailpit:latest")
+            .withExposedPorts(1025, 8025);
+
+    @DynamicPropertySource
+    static void mailProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.mail.host", mailpit::getHost);
+        registry.add("spring.mail.port", () -> mailpit.getMappedPort(1025));
+    }
+
     @Autowired
     private TestRestTemplate rest;
 
     @Autowired
     private ObjectMapper objectMapper;
 
+    @LocalManagementPort
+    private int managementPort;
+
     private static final String EMAIL = "alice@example.com";
     private static final String PASSWORD = "correct-horse-battery";
+    private static final String NEW_PASSWORD = "staple-battery-horse";
 
     @Test
     @Order(1)
@@ -156,6 +181,245 @@ class AuthFlowIntegrationTest {
                 """,
                 csrfCookie, csrfCookie, null);
         assertThat(weakPassword.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @Order(3)
+    void exposesPrometheusMetricsOnManagementPortOnly() {
+        // Management port: scrape works without a session, includes the standard
+        // HTTP metrics and our auth counters (incremented by the tests above).
+        ResponseEntity<String> scrape = rest.getForEntity(
+                "http://localhost:" + managementPort + "/actuator/prometheus", String.class);
+        assertThat(scrape.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(scrape.getBody())
+                .contains("http_server_requests_seconds_count")
+                .contains("auth_registrations_total{")
+                .contains("auth_logins_total{application=\"back\",method=\"password\",result=\"success\"}")
+                .contains("auth_logins_total{application=\"back\",method=\"password\",result=\"failure\"}");
+
+        // The public API port serves no actuator endpoints at all.
+        ResponseEntity<String> viaApiPort = rest.getForEntity("/actuator/prometheus", String.class);
+        assertThat(viaApiPort.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    @Order(4)
+    void otpLoginFlow() {
+        ResponseEntity<String> csrfResponse = rest.getForEntity("/api/auth/csrf", String.class);
+        String csrf = extractCookie(csrfResponse.getHeaders(), "XSRF-TOKEN");
+
+        // unknown account: identical 202, but nothing is emailed
+        ResponseEntity<String> ghost = postJson("/api/auth/otp/request",
+                """
+                {"email": "ghost@example.com"}
+                """, csrf, csrf, null);
+        assertThat(ghost.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+        // real account: 202 + email with a 6-digit code
+        ResponseEntity<String> request = postJson("/api/auth/otp/request",
+                """
+                {"email": "%s"}
+                """.formatted(EMAIL), csrf, csrf, null);
+        assertThat(request.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        String code = latestEmailedCode(EMAIL, "Код для входа");
+
+        // wrong code -> 401 with the generic message
+        String wrongCode = code.equals("000000") ? "111111" : "000000";
+        ResponseEntity<String> wrong = postJson("/api/auth/otp/login",
+                """
+                {"email": "%s", "code": "%s"}
+                """.formatted(EMAIL, wrongCode), csrf, csrf, null);
+        assertThat(wrong.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(wrong.getBody()).contains("Invalid or expired code");
+
+        // correct code -> logged in, session cookie set
+        ResponseEntity<String> login = postJson("/api/auth/otp/login",
+                """
+                {"email": "%s", "code": "%s"}
+                """.formatted(EMAIL, code), csrf, csrf, null);
+        assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(objectMapper.readTree(login.getBody()).get("email").asString()).isEqualTo(EMAIL);
+        String sessionCookie = extractCookie(login.getHeaders(), "SESSION");
+        assertThat(sessionCookie).isNotBlank();
+        assertThat(getWithCookies("/api/auth/me", "SESSION=" + sessionCookie).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+
+        // the code is single-use
+        ResponseEntity<String> replay = postJson("/api/auth/otp/login",
+                """
+                {"email": "%s", "code": "%s"}
+                """.formatted(EMAIL, code), csrf, csrf, null);
+        assertThat(replay.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    @Order(5)
+    void passwordResetFlowInvalidatesSessionsAndOldPassword() {
+        ResponseEntity<String> csrfResponse = rest.getForEntity("/api/auth/csrf", String.class);
+        String csrf = extractCookie(csrfResponse.getHeaders(), "XSRF-TOKEN");
+
+        // a live session that must die after the reset
+        ResponseEntity<String> login = postJson("/api/auth/login",
+                """
+                {"email": "%s", "password": "%s"}
+                """.formatted(EMAIL, PASSWORD), csrf, csrf, null);
+        String sessionCookie = extractCookie(login.getHeaders(), "SESSION");
+        assertThat(sessionCookie).isNotBlank();
+
+        // request the reset code and read it from the email
+        ResponseEntity<String> request = postJson("/api/auth/password/reset-request",
+                """
+                {"email": "%s"}
+                """.formatted(EMAIL), csrf, csrf, null);
+        assertThat(request.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        String code = latestEmailedCode(EMAIL, "Сброс пароля");
+
+        ResponseEntity<String> reset = postJson("/api/auth/password/reset",
+                """
+                {"email": "%s", "code": "%s", "newPassword": "%s"}
+                """.formatted(EMAIL, code, NEW_PASSWORD), csrf, csrf, null);
+        assertThat(reset.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+        // the pre-reset session has been invalidated server-side
+        assertThat(getWithCookies("/api/auth/me", "SESSION=" + sessionCookie).getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+
+        // old password dead, new password works
+        ResponseEntity<String> oldPassword = postJson("/api/auth/login",
+                """
+                {"email": "%s", "password": "%s"}
+                """.formatted(EMAIL, PASSWORD), csrf, csrf, null);
+        assertThat(oldPassword.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+
+        ResponseEntity<String> newPassword = postJson("/api/auth/login",
+                """
+                {"email": "%s", "password": "%s"}
+                """.formatted(EMAIL, NEW_PASSWORD), csrf, csrf, null);
+        assertThat(newPassword.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    @Order(6)
+    void emailVerificationLinkFlow() {
+        ResponseEntity<String> csrfResponse = rest.getForEntity("/api/auth/csrf", String.class);
+        String csrf = extractCookie(csrfResponse.getHeaders(), "XSRF-TOKEN");
+        String email = "verify-me@example.com";
+
+        // Registration sends the verification link by itself.
+        ResponseEntity<String> register = postJson("/api/auth/register",
+                """
+                {"email": "%s", "password": "%s"}
+                """.formatted(email, PASSWORD), csrf, csrf, null);
+        assertThat(register.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(objectMapper.readTree(register.getBody()).get("emailVerified").asBoolean())
+                .as("fresh account starts unverified").isFalse();
+
+        String token = latestEmailedToken(email);
+
+        // A tampered token is rejected, and the real one still works afterwards -
+        // failures must not consume the token.
+        ResponseEntity<String> tampered = postJson("/api/auth/email/verify",
+                """
+                {"token": "%s"}
+                """.formatted(token.substring(0, token.length() - 2) + "xy"), csrf, csrf, null);
+        assertThat(tampered.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+
+        ResponseEntity<String> verify = postJson("/api/auth/email/verify",
+                """
+                {"token": "%s"}
+                """.formatted(token), csrf, csrf, null);
+        assertThat(verify.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+        // The flag is now visible on the session's own user.
+        ResponseEntity<String> login = postJson("/api/auth/login",
+                """
+                {"email": "%s", "password": "%s"}
+                """.formatted(email, PASSWORD), csrf, csrf, null);
+        assertThat(objectMapper.readTree(login.getBody()).get("emailVerified").asBoolean()).isTrue();
+
+        // The link is single-use.
+        ResponseEntity<String> replay = postJson("/api/auth/email/verify",
+                """
+                {"token": "%s"}
+                """.formatted(token), csrf, csrf, null);
+        assertThat(replay.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    /** Pulls the verification link out of the email and returns its token parameter. */
+    private String latestEmailedToken(String toAddress) {
+        String base = "http://" + mailpit.getHost() + ":" + mailpit.getMappedPort(8025);
+        for (int i = 0; i < 50; i++) {
+            JsonNode messages = objectMapper
+                    .readTree(rest.getForObject(base + "/api/v1/messages", String.class))
+                    .get("messages");
+            for (JsonNode message : messages) {
+                if (message.get("To").get(0).get("Address").asString().equals(toAddress)
+                        && message.get("Subject").asString().contains("Подтверждение почты")) {
+                    JsonNode detail = objectMapper.readTree(rest.getForObject(
+                            base + "/api/v1/message/" + message.get("ID").asString(), String.class));
+
+                    Matcher matcher = Pattern
+                            .compile("/verify-email\\?token=([A-Za-z0-9._%-]+)")
+                            .matcher(detail.get("Text").asString());
+                    assertThat(matcher.find()).as("verification link in plain-text part").isTrue();
+                    String token = URLDecoder.decode(matcher.group(1), StandardCharsets.UTF_8);
+
+                    // The clickable button must carry the same link.
+                    assertThat(detail.get("HTML").asString())
+                            .as("HTML part").contains("Подтвердить почту").contains(matcher.group(1));
+                    return token;
+                }
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
+        throw new AssertionError("No verification email to " + toAddress);
+    }
+
+    /**
+     * Polls the Mailpit REST API for the newest message to {@code toAddress}
+     * whose subject contains {@code subjectContains}, and extracts the 6-digit
+     * code from its body. Sending is async, hence the polling.
+     */
+    private String latestEmailedCode(String toAddress, String subjectContains) {
+        String base = "http://" + mailpit.getHost() + ":" + mailpit.getMappedPort(8025);
+        for (int i = 0; i < 50; i++) {
+            JsonNode messages = objectMapper
+                    .readTree(rest.getForObject(base + "/api/v1/messages", String.class))
+                    .get("messages");
+            for (JsonNode message : messages) {
+                if (message.get("To").get(0).get("Address").asString().equals(toAddress)
+                        && message.get("Subject").asString().contains(subjectContains)) {
+                    JsonNode detail = objectMapper.readTree(rest.getForObject(
+                            base + "/api/v1/message/" + message.get("ID").asString(), String.class));
+
+                    String text = detail.get("Text").asString();
+                    Matcher matcher = Pattern.compile("\\d{6}").matcher(text);
+                    assertThat(matcher.find()).as("code in plain-text part").isTrue();
+                    String code = matcher.group();
+
+                    // multipart/alternative: the HTML part carries the same code...
+                    assertThat(detail.get("HTML").asString())
+                            .as("HTML part").contains(code).contains("botai");
+                    // ...and the subject carries none, so it cannot leak from a
+                    // lock-screen notification preview.
+                    assertThat(message.get("Subject").asString()).doesNotContain(code);
+                    return code;
+                }
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
+        throw new AssertionError(
+                "No email to %s with subject containing '%s'".formatted(toAddress, subjectContains));
     }
 
     private ResponseEntity<String> postJson(String path, String body, String csrfCookie,

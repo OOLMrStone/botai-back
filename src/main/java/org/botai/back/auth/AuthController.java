@@ -4,7 +4,11 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.botai.back.auth.dto.EmailRequest;
+import org.botai.back.auth.dto.EmailVerificationRequest;
 import org.botai.back.auth.dto.LoginRequest;
+import org.botai.back.auth.dto.OtpLoginRequest;
+import org.botai.back.auth.dto.PasswordResetRequest;
 import org.botai.back.auth.dto.RegisterRequest;
 import org.botai.back.auth.dto.UserResponse;
 import org.springframework.http.HttpStatus;
@@ -47,6 +51,59 @@ public class AuthController {
                               HttpServletRequest servletRequest,
                               HttpServletResponse servletResponse) {
         return UserResponse.from(authService.login(request, servletRequest, servletResponse));
+    }
+
+    /**
+     * Emails a one-time login code. Always 202: whether the account exists is
+     * deliberately not revealed.
+     */
+    @PostMapping("/otp/request")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void requestLoginCode(@Valid @RequestBody EmailRequest request) {
+        authService.requestLoginCode(request.email());
+    }
+
+    /** Passwordless login with the emailed code; sets the session cookie. */
+    @PostMapping("/otp/login")
+    public UserResponse otpLogin(@Valid @RequestBody OtpLoginRequest request,
+                                 HttpServletRequest servletRequest,
+                                 HttpServletResponse servletResponse) {
+        return UserResponse.from(authService.otpLogin(request, servletRequest, servletResponse));
+    }
+
+    /**
+     * Re-sends the verification link (registration sends one automatically).
+     * Always 202 - neither account existence nor verification status leaks.
+     */
+    @PostMapping("/email/verify-request")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void requestEmailVerification(@Valid @RequestBody EmailRequest request) {
+        authService.requestEmailVerification(request.email());
+    }
+
+    /**
+     * Confirms the address. The emailed link opens the SPA, which posts the
+     * token here; a plain GET link would be "clicked" by mail scanners and
+     * link-preview bots, burning the token before the user ever sees it.
+     */
+    @PostMapping("/email/verify")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void verifyEmail(@Valid @RequestBody EmailVerificationRequest request) {
+        authService.verifyEmail(request.token());
+    }
+
+    /** Emails a password-reset code. Same 202-always contract as /otp/request. */
+    @PostMapping("/password/reset-request")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void requestPasswordReset(@Valid @RequestBody EmailRequest request) {
+        authService.requestPasswordResetCode(request.email());
+    }
+
+    /** Sets the new password and invalidates every session of the account. */
+    @PostMapping("/password/reset")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resetPassword(@Valid @RequestBody PasswordResetRequest request) {
+        authService.resetPassword(request);
     }
 
     /** Who am I — lets the frontend restore UI state from the session cookie. */

@@ -1,5 +1,6 @@
 package org.botai.back.security;
 
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -32,7 +33,15 @@ public class SecurityConfig {
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/csrf").permitAll()
+                        .requestMatchers(
+                                "/api/auth/register", "/api/auth/login", "/api/auth/csrf",
+                                "/api/auth/otp/request", "/api/auth/otp/login",
+                                "/api/auth/password/reset-request", "/api/auth/password/reset",
+                                "/api/auth/email/verify-request", "/api/auth/email/verify").permitAll()
+                        // Actuator (health/prometheus) is served on the separate
+                        // management port, which must stay internal-only; no
+                        // additional auth on top of that network boundary.
+                        .requestMatchers(EndpointRequest.toAnyEndpoint()).permitAll()
                         .anyRequest().authenticated())
                 // Session fixation protection: the session id rotates on login
                 // (see AuthService), so a pre-login cookie can never be promoted

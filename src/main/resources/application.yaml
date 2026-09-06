@@ -29,6 +29,14 @@ spring:
     problemdetails:
       enabled: true
 
+  mail:
+    # Dev default: Mailpit from compose.yaml (SMTP :1025, inbox UI at
+    # http://localhost:8025) - no credentials, nothing leaves the machine.
+    # To send through the real Gmail mailbox instead, run with the "gmail"
+    # profile (see application-gmail.yaml).
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+
   # ---------------------------------------------------------------------------
   # External login providers (base — enable when credentials exist).
   # 1. Create OAuth credentials at https://console.cloud.google.com/apis/credentials
@@ -44,6 +52,29 @@ spring:
   #            client-id: ${GOOGLE_CLIENT_ID}
   #            client-secret: ${GOOGLE_CLIENT_SECRET}
   #            scope: openid, profile, email
+
+app:
+  mail:
+    from: botai <no-reply@botai.example>
+  frontend:
+    # Base URL of the SPA - emailed links point here, not at this API.
+    # Production: set FRONTEND_BASE_URL to the real https origin.
+    base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
+
+# Metrics and health live on a separate port: the public API (8080) never
+# serves /actuator, and Prometheus scrapes 8081 over the internal network.
+# Do NOT expose 8081 publicly.
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  metrics:
+    tags:
+      # Distinguishes this service in a shared Prometheus.
+      application: ${spring.application.name}
 
 server:
   servlet:

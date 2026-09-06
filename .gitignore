@@ -35,3 +35,9 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Local secrets ###
+# Spring Boot auto-loads ./config/*.yaml and they override the classpath ones.
+# Keep every local override out of git; the .example files are safe to commit.
+config/*
+!config/*.example

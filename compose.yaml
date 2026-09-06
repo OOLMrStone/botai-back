@@ -7,3 +7,10 @@ services:
       - 'POSTGRES_USER=myuser'
     ports:
       - '5432'
+  # Dev SMTP: catches all outgoing mail, web UI at http://localhost:8025.
+  # Fixed host ports because spring.mail defaults point at localhost:1025.
+  mailpit:
+    image: 'axllent/mailpit:latest'
+    ports:
+      - '1025:1025'
+      - '8025:8025'

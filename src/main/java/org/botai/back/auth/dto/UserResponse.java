@@ -9,7 +9,9 @@ public record UserResponse(
         String email,
         String displayName,
         String role,
-        String authProvider
+        String authProvider,
+        // Lets the frontend show a "confirm your email" nudge.
+        boolean emailVerified
 ) {
     public static UserResponse from(User user) {
         return new UserResponse(
@@ -17,7 +19,8 @@ public record UserResponse(
                 user.getEmail(),
                 user.getDisplayName(),
                 user.getRole().name(),
-                user.getAuthProvider().name()
+                user.getAuthProvider().name(),
+                user.isEmailVerified()
         );
     }
 }

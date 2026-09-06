@@ -51,6 +51,10 @@ public class User {
     @Column(nullable = false)
     private boolean enabled;
 
+    /** Proven ownership of the address (see the email verification flow). */
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -69,6 +73,9 @@ public class User {
         this.authProvider = authProvider != null ? authProvider : AuthProvider.LOCAL;
         this.providerId = providerId;
         this.enabled = true;
+        // An external provider (Google et al.) has already proven the address
+        // belongs to the user; only local sign-ups have to verify it here.
+        this.emailVerified = this.authProvider != AuthProvider.LOCAL;
         this.createdAt = now;
         this.updatedAt = now;
     }

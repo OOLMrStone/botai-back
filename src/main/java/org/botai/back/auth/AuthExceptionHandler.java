@@ -14,6 +14,12 @@ public class AuthExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
     }
 
+    /** Wrong/expired one-time code (or unknown account - indistinguishable on purpose). */
+    @ExceptionHandler(InvalidCodeException.class)
+    public ProblemDetail handleInvalidCode(InvalidCodeException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    }
+
     /**
      * Covers BadCredentialsException, DisabledException, etc. from the login
      * endpoint. The message is deliberately generic: revealing whether the email
