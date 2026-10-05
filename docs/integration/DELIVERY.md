@@ -5,10 +5,10 @@
 | Открыть | Локально | Сервер через SSH-туннель |
 |---|---|---|
 | Сайт | http://127.0.0.1:13000 | http://localhost:23000 |
-| База, Adminer | http://127.0.0.1:18090 | http://localhost:28090 |
+| База, Adminer | [PostgreSQL](http://127.0.0.1:18090/?pgsql=postgres&username=botai_operator&db=botai) | [PostgreSQL](http://localhost:28090/?pgsql=postgres&username=botai_operator&db=botai) |
 | Тестовая почта | http://127.0.0.1:18025 | http://localhost:28025 |
 
-Тестовые логины и пароль оператора: локально `botai-back/runtime/credentials.json`, серверные — `botai-back/runtime/evidence/stage-credentials.json`. Файлы private0600 вне Git. Для Adminer: PostgreSQL, server `postgres`, database `botai`, user `botai_operator`. Не заменять127 на localhost у локального сайта: cookies должны быть изолированы от серверного стенда.
+Тестовые логины и пароль оператора: локально `botai-back/runtime/credentials.json`, серверные — `botai-back/runtime/evidence/stage-credentials.json`. Файлы private0600 вне Git. Ссылки Adminer уже выбирают PostgreSQL, server `postgres`, database `botai`, user `botai_operator`; остаётся ввести пароль оператора. Не заменять127 на localhost у локального сайта: cookies должны быть изолированы от серверного стенда.
 
 ## Что работает
 

@@ -49,7 +49,7 @@ erDiagram
 
 ## Посмотреть самому
 
-Локально открыть [Adminer](http://127.0.0.1:18090), система PostgreSQL, server `postgres`, database `botai`, user `botai_operator`. Пароль в **`botai-back/runtime/credentials.json`**, файл0600 вне Git. Включение: `scripts/integration/compose.sh --profile ops up -d adminer`.
+Локально открыть [Adminer](http://127.0.0.1:18090/?pgsql=postgres&username=botai_operator&db=botai), система PostgreSQL, server `postgres`, database `botai`, user `botai_operator`. Пароль в **`botai-back/runtime/credentials.json`**, файл0600 вне Git. Включение: `scripts/integration/compose.sh --profile ops up -d adminer`.
 
 Оператор по умолчанию read-only. Доступны справочники и `operator_accounts/tasks/task_versions/attempts/attempt_items/submissions/results/objects/jobs/runs/activity_days`. Вид `operator_accounts` не содержит email, password_hash или provider ID; `operator_objects` скрывает S3 keys; результаты не содержат точный AI JSON/эталоны. SELECT на users, sessions, OTP, answer keys и raw objects/results проверен как запрещённый. Продуктовая модерация — отдельная `/admin/submissions` с ADMIN, не Adminer.
 
@@ -66,4 +66,4 @@ WHERE table_schema='public' ORDER BY table_name,ordinal_position;
 
 Структура физической схемы может быть видна в information_schema только в пределах разрешений роли. Полный introspection для администратора через локальный контейнер: `scripts/integration/compose.sh exec postgres psql -U botai_migrator -d botai`; не публиковать его credentials и не использовать migrator для обычного просмотра.
 
-Для отдельного серверного stage: `ssh -N -L localhost:23000:127.0.0.1:13000 -L localhost:28090:127.0.0.1:18090 -L localhost:28025:127.0.0.1:18025 ege-server`. Серверный backend/PG/Garage/AI уже работают, Adminer доступен на http://localhost:28090 через этот tunnel. Сайт работает на http://localhost:23000. Stage credentials отдельно `/srv/botai-integration/runtime/credentials.json`; это свежие серверные учётные данные, не локальные пароли. Серверная отдельная база также применяет V1–V6; backup/restore PostgreSQL и S3 проверен, фактическое состояние в RUNTIME-EVIDENCE.md.
+Для отдельного серверного stage: `ssh -N -L localhost:23000:127.0.0.1:13000 -L localhost:28090:127.0.0.1:18090 -L localhost:28025:127.0.0.1:18025 ege-server`. Серверный backend/PG/Garage/AI уже работают, [Adminer](http://localhost:28090/?pgsql=postgres&username=botai_operator&db=botai) доступен через этот tunnel. Сайт работает на http://localhost:23000. Stage credentials отдельно `/srv/botai-integration/runtime/credentials.json`; это свежие серверные учётные данные, не локальные пароли. Серверная отдельная база также применяет V1–V6; backup/restore PostgreSQL и S3 проверен, фактическое состояние в RUNTIME-EVIDENCE.md.
