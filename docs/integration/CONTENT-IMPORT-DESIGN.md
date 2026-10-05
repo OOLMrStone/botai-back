@@ -22,7 +22,7 @@
 
 V6 сохраняет100 оригинальных synthetic заданий, 140 тем и исходные опубликованные шаблоны. Их версии, `is_demo`, попытки, ответы, избранное и результаты не переписываются. Новые задания не объявлять synthetic только потому, что runtime AI работает в mock; результат mock остаётся demo по существующей границе проверки.
 
-Публичный Task DTO пока не содержит provenance; `sourceYear` — обязательный int. `TrainingRequest.source` означает только `catalog|favorites` и не используется для издателя. `TaskSnapshot` передаёт AI серверные statement/reference/acceptedAnswers, без произвольных URL. Reference выдаётся отдельно по существующим правилам раскрытия после проверки, а не в обычном Task DTO.
+В исходном V5/V6 публичный Task DTO не содержал provenance; `sourceYear` был обязательным int. В V7 это nullable year и публичные `sources`, без answer/reference. `TrainingRequest.source` означает только `catalog|favorites` и не используется для издателя. `TaskSnapshot` передаёт AI серверные statement/reference/acceptedAnswers, без произвольных URL. Reference выдаётся отдельно по существующим правилам раскрытия после проверки, а не в обычном Task DTO.
 
 ## Минимальные добавления после согласования
 
@@ -98,6 +98,6 @@ V6 сохраняет100 оригинальных synthetic заданий, 140 
 
 ## Реализация и применение
 
-V7 и Java publisher/media/API реализованы; на пользовательские стенды пока не применены. Java21 full49 tests PASS до последнего rich-answer/reveal дополнения; новая финальная проверка выполняется отдельно. CLI `scripts/integration/publish-content.sh /absolute/package normalized/tasks.jsonl` выполняет preflight, с `--publish` — явную публикацию. Mount read-only, отдельный контейнер без host ports, worker=false с запуска, Flyway выключен: V7 применяется отдельным одобренным deployment. До него CLI не использовать. Истинный размер банка ещё не установлен;3 вручную захваченных source samples не означают полный seed.
+V7 и Java publisher/media/API реализованы: итоговый Java21 full57/57 PASS, independent security PASS. Локально V7 применено и3 reviewed real tasks опубликованы; repeat noop3, оригинальные100demo и пользовательские rows сохранены. Stage остаётся на последнем подтверждённом V6/100demo/0real: SSH banner timeout, remote deployment не выполнялся. CLI `scripts/integration/publish-content.sh /absolute/package normalized/tasks.jsonl` выполняет preflight, с `--publish` — явную публикацию. Mount read-only, отдельный контейнер без host ports, worker=false с запуска, Flyway выключен: V7 применяется отдельным одобренным deployment. До него CLI не использовать. Истинный размер банка ещё не установлен;3 вручную захваченных source samples не означают полный seed.
 
 Root/security согласовали `POST /api/attempts/{attempt}/items/{item}/solution-reveal` только для extended стабильного unsupported: owner+CSRF+expectedAnswerRevision/latest submission ID+revision, без оценок и progress. Immutable grant одновременно audit event; повторы идемпотентны. GET solution и media используют единый predicate graded-current OR valid grant, включая version/asset membership. Текст/рисунок, новая submission, upload/delete/revision и staged фото делают прежний grant недействительным. Nullable rich answer, media и новый reveal требуют финальных tests/review до deployment.

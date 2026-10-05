@@ -62,7 +62,7 @@ erDiagram
 
 ## Посмотреть самому
 
-### Добавление каталога V7 — пока не применено стендам
+### Каталог V7 — применён локально, stage ожидает SSH
 
 Код миграции и importer проверены на отдельном PostgreSQL; рабочие local/stage сохраняют V1–V6 и прежние данные до одобренного pilot. Новый provider identity не заменяет тему и не меняет пользовательскую историю:
 
@@ -77,7 +77,7 @@ flowchart LR
     M --> R["ready / reference: ответ и решение"]
 ```
 
-После применения V7 `operator_task_sources` покажет provider/external ID и UUID задания; `operator_task_versions` — публичное происхождение `sources` и готовность текстового AI input. `operator_catalog_assets` покажет состояние и размеры, без bucket/key и содержимого; `operator_import_runs/items` — исходы публикации и причины карантина. Неизвестный год остаётся null. Карантин не появляется в текущей выдаче; повторный импорт не создаёт вторую задачу.
+Локально3 real+100demo, stage последнее подтверждённое100demo/0real; текущий stage tunnel недоступен из-за SSH banner timeout. `operator_task_sources` показывает provider/external ID и UUID задания; `operator_task_versions` — публичное происхождение `sources` и готовность текстового AI input. `operator_catalog_assets` покажет состояние и размеры, без bucket/key и содержимого; `operator_import_runs/items` — исходы публикации и причины карантина. Неизвестный год остаётся null. Карантин не появляется в текущей выдаче; повторный импорт не создаёт вторую задачу.
 
 `sources` содержит только сведения об источнике. Ответ, точное решение и их изображения остаются за отдельной границей раскрытия. Для extended stable unsupported ученик явно открывает эталон без оценки: immutable grant привязан к revision текста/рисунка и последней submission ID/revision. Новое фото или правка делает grant недействительным. Это не результат AI и не начисление progress. Подробнее: [контракт импорта](CONTENT-IMPORT-SPEC.md).
 

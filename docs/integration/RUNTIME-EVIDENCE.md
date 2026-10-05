@@ -1,5 +1,18 @@
 # Runtime evidence — 2026-10-05
 
+## Текущий импорт-пилот, 2026-10-05
+
+**Локально применено V7 и опубликовано 3 реальных задания**: Школково137451 (№1),92097 (№4),185802 (№20). В активной базе103 версии:100 прежних demo+3 real;141 активная тема;32 catalog assets, все ready. Пакет `tasks.jsonl` SHA256 `95a806cf386bb7de1a591bf5e5eb9e9cc4f8f3e291f52d9df5985bc3b7cfc1cc`. Первый запуск published3/noop0/quarantined0, повтор published0/noop3/quarantined0; изменённых версий/дубликатов нет. Это проверенный ручной pilot, **не полный банк**. Census4257 occurrences/249pages/74sections ещё не означает4257 уникальных опубликованных заданий.
+
+- [Локальный сайт](http://127.0.0.1:13000) обновлён:7 сервисов running, все6 предусмотренных healthchecks healthy. Production frontend source482 digest `e32a91a199aecff3162e14bade85e83319f808fef0c31f6073242c069293671c`; manifest образов local front `sha256:10ab6200e502f0f7c72399c822e40d503abec1eb35e2948890b2b14acc13742b`, back `sha256:4e08480fd78dcea75548470f10c184a7fd9cbe8dfcba1bf29aa23fb725bb5e18`.
+- Свежий PG backup `runtime/content-import/rehearsal/v6-before.dump` восстановлен на отдельном PG без host ports; реальная V6→V7 миграция+preflight3/0 прошли.15 исходных fingerprint совпали. После активной публикации отдельно сравнены все исходные rows users/demo versions/accepted answers/templates/template items/attempts/items: byte-identical. Пользовательские аккаунты/история сохранены. Это свежая DB репетиция; прежняя полная PG+S3 репетиция ниже, новую S3-копию здесь не заявляем.
+- Узкий same-origin HTTP gate PASS: login, public sources без эталонов; private conditionPNG и anonymous401; unsupported№20 explicit reveal→rich answer/solution; CSRF403; повтор идемпотентен; referencePNG private; изменение ответа отзывает solution/media. Новых AI submissions для real версий0. Эталонное раскрытие не добавляет score/progress/AI jobs. Private evidence `runtime/evidence/content-pilot-{local,history}.json`, secrets не включены. Итоговые исходные gates Java57/57, frontend95+43/tsc/build, independent security PASS.
+- **Stage ещё не обновлён этим пилотом**: последнее подтверждённое состояние V6/100demo/0real. Одна обычная SSH попытка и3 bounded supervisor attempts завершились banner-exchange timeout до authentication. Supervisor остановился после лимита, control socket `runtime/stage-tunnel.sock` отсутствует; ссылки localhost23000/28090 сейчас недоступны. Новых remote изменений нет; текущее remote health без SSH не подтверждается. Code-only transfer archive готов в ignored0600 `runtime/evidence/content-stage-update.tgz`; отдельный private pilot package сохранён. Следующий шаг после восстановления SSH: свежий stage PG backup, sequential capped back/front build, V7, тот же package publish+noop, scoped HTTP/UI evidence. Публичный prod не изменялся.
+- Actual updated-app visual/mobile gate после импорта ещё не заявлен: root выполняет отдельную локальную browser проверку; в runtime CUA browsers[] и IAB unavailable. Предыдущая Safari матрица ниже относится к состоянию до V7.
+
+Ниже — сохранённые проверки предыдущего базового runtime; текущие stage доступность и source/image IDs определяются разделом выше.
+
+
 ## Running locally
 
 - Dedicated Docker project `botai-integration-local`: PG17.11 + private Garage2.3.0 + AI mock exported74 allowed files + backend Java21; all healthchecks passed. Mailpit1.27.8 safe SMTP sink and Adminer5.4.1 loopback. Infra tags pinned by immutable manifest digests in compose.
