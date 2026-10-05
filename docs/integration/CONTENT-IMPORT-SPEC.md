@@ -13,7 +13,7 @@
 - Существующие категории Решу ЕГЭ сохраняются, кроме №5 и №20. №4 остаётся единственной темой `sdamgia-166`; №5 объединяет 185/265 в единственную актуальную `sdamgia-185` («Вероятности сложных событий»).
 - №20: `botai-20-divisibility` (делимость, остатки и чётность), `botai-20-integer-equations` (целочисленные уравнения), `botai-20-digits` (цифры и запись числа), `botai-20-sequences` (последовательности и прогрессии), `botai-20-invariants` (операции и инварианты), `botai-20-extrema` (оценки и экстремальные значения). Один основной учебный блок, дополнительные методы могут быть тегами. Источник и год не являются темой.
 - Итог: 141 актуальная тема; исторические строки и принадлежность старых версий сохраняются. Сомнительная классификация требует разбора, не случайного назначения.
-- `provider=shkolkovo`, external task ID и URL отделены от исходной публикации. Задача может иметь несколько источников. Год неизвестен → null. Старый `TrainingRequest.source=catalog|favorites` не менять; публичное происхождение — отдельное `sources`.
+- `provider=shkolkovo`, external task ID и URL отделены от исходной публикации. Задача может иметь несколько источников. Год неизвестен → null. Старый `TrainingRequest.source=catalog|favorites` не менять; публичное происхождение — отдельное `sources`, содержащие только originalPublisher/originalReferences. Provider, externalId и capture URL остаются внутренними provenance/audit полями, не источником в интерфейсе.
 
 ## Целостность
 
@@ -31,6 +31,6 @@
 ## Additive API v1
 
 - Канонический package JSONL — [CONTENT-IMPORT-DESIGN](CONTENT-IMPORT-DESIGN.md): `botai-content.v1`; отдельные `referenceAnswerContent` и `referenceContent`. Точный строковый `referenceAnswer` nullable только для14–20 при непустом rich answer;1–13 по-прежнему требуют точный accepted answer.
-- Task: nullable `sourceYear`, безопасный публичный `sources[]`, private reference blocks исключены. Image/formula media URL server-owned; общий catalog-media отдаёт только условие.
+- Task: nullable `sourceYear`, публичный `sources[]` только с первоисточниками `originalPublisher`/`originalReferences`; provider/sourceUrl/externalId исключены. Ссылки возможны лишь на подтверждённый первоисточник, без fallback на Школково. Private reference blocks исключены. Image/formula media URL server-owned; общий catalog-media отдаёт только условие.
 - Solution: прежние reference строки + `referenceAnswerContent`/`referenceContent`, только через авторизованное раскрытие.
 - POST `/api/attempts/{attempt}/items/{item}/solution-reveal`: `{expectedAnswerRevision,expectedSubmissionId:null|UUID,expectedSubmissionRevision:null|int}`. Только extended stable unsupported/неполный AI snapshot, auth+CSRF+owner, неизменяемый audit grant без grade/progress. Grants действуют лишь для текущего task version/text-drawing revision/latest submission ID+revision без staged фото; изменения отзывают доступ. Повтор идентичного запроса не создаёт второй grant. GET solution/reference media — общий owner/current-state predicate. Transient unavailable, unknown capability и отсутствиеPro сами по себе не разрешают reveal.

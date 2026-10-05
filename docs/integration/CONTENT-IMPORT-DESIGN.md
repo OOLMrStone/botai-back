@@ -22,7 +22,7 @@
 
 V6 сохраняет100 оригинальных synthetic заданий, 140 тем и исходные опубликованные шаблоны. Их версии, `is_demo`, попытки, ответы, избранное и результаты не переписываются. Новые задания не объявлять synthetic только потому, что runtime AI работает в mock; результат mock остаётся demo по существующей границе проверки.
 
-В исходном V5/V6 публичный Task DTO не содержал provenance; `sourceYear` был обязательным int. В V7 это nullable year и публичные `sources`, без answer/reference. `TrainingRequest.source` означает только `catalog|favorites` и не используется для издателя. `TaskSnapshot` передаёт AI серверные statement/reference/acceptedAnswers, без произвольных URL. Reference выдаётся отдельно по существующим правилам раскрытия после проверки, а не в обычном Task DTO.
+В исходном V5/V6 публичный Task DTO не содержал provenance; `sourceYear` был обязательным int. В V7 это nullable year и публичные `sources` только originalPublisher/originalReferences, без provider/externalId/capture URL и answer/reference. Immutable сохранённый snapshot/provenance остаётся прежним; API делает безопасную проекцию, поэтому переимпорт для изменения подписи источника не требуется. `TrainingRequest.source` означает только `catalog|favorites` и не используется для издателя. `TaskSnapshot` передаёт AI серверные statement/reference/acceptedAnswers, без произвольных URL. Reference выдаётся отдельно по существующим правилам раскрытия после проверки, а не в обычном Task DTO.
 
 ## Минимальные добавления после согласования
 

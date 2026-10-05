@@ -46,7 +46,7 @@ public class CatalogRepository {
             """).param("user",userId).param("version",versionId).query((r,n)->new Task(r.getObject("task_id",UUID.class),versionId,r.getInt("version"),r.getInt("exam_number"),r.getInt("part"),
                 jdbc.sql("SELECT topic_id FROM task_version_topics WHERE task_version_id=:id ORDER BY topic_id").param("id",versionId).query(String.class).list(),
                 r.getString("difficulty"),r.getString("response_type"),r.getInt("max_points"),json.read(r.getString("content")),r.getBoolean("favourite"),r.getString("progress"),
-                r.getInt("exam_number")>=14&&!r.getBoolean("ai_input_ready")?"unsupported":capabilities.forNumber(r.getInt("exam_number"),r.getInt("max_points")),r.getBoolean("is_demo"),r.getObject("source_year",Integer.class),json.read(r.getString("sources")))).optional().orElseThrow(ApiException::notFound);
+                r.getInt("exam_number")>=14&&!r.getBoolean("ai_input_ready")?"unsupported":capabilities.forNumber(r.getInt("exam_number"),r.getInt("max_points")),r.getBoolean("is_demo"),r.getObject("source_year",Integer.class),CatalogSources.project(json.read(r.getString("sources")),json))).optional().orElseThrow(ApiException::notFound);
     }
     public List<UUID> find(UUID user,Integer number,String topic,String difficulty,boolean favourites,int offset,int limit) {
         if(number!=null&&(number<1||number>20))throw ApiException.invalid("Номер задания от 1 до 20");

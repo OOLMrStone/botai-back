@@ -76,7 +76,7 @@ class ContentImportIntegrationTest {
     @Test void replaysNullableYearAndChangedVersionsPreservePinnedAttempts() {
         var root=task(7);var first=publish(root);var attempt=attempt(taskId(first.version()),7);
         assertThat(publish(root).state()).isEqualTo("noop");
-        var projected=catalog.task(user,taskId(first.version()));assertThat(projected.sourceYear()).isNull();assertThat(json.write(projected)).contains("\"sourceYear\":null","\"sources\"").doesNotContain("permissionRef","referenceAnswer","referenceContent");
+        var projected=catalog.task(user,taskId(first.version()));assertThat(projected.sourceYear()).isNull();assertThat(json.write(projected)).contains("\"sourceYear\":null","\"sources\"").doesNotContain("permissionRef","referenceAnswer","referenceContent","shkolkovo","sourceUrl","provider");
         root.put("content",List.of(Map.of("type","text","value","Compute 2+2")));root.put("statement","Compute 2+2");root.put("referenceAnswer","4");root.put("acceptedAnswers",List.of("4"));root.put("referenceSolution","2+2=4");root.put("referenceContent",List.of(Map.of("type","text","value","2+2=4")));
         var changed=publish(root);assertThat(changed.version()).isNotEqualTo(first.version());assertThat(catalog.task(user,taskId(first.version())).version()).isEqualTo(2);
         var pinned=attempts.get(user,attempt.id()).items().getFirst().task();assertThat(pinned.taskVersionId()).isEqualTo(first.version());assertThat(pinned.content().get(0).path("value").asText()).isEqualTo("Compute 1+1");
