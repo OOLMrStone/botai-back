@@ -23,4 +23,5 @@ public class AttemptController {
     @GetMapping("/mock-exams") public Page<Exam> exams(Authentication auth,@RequestParam(required=false) String cursor,@RequestParam(required=false) Integer limit) { return service.exams(actors.require(auth).getId(),cursor,limit); }
     @PostMapping("/mock-exams/{id}/attempts") public Attempt exam(Authentication auth,@PathVariable UUID id,@RequestHeader("Idempotency-Key") String key) { return service.startExam(actors.require(auth).getId(),id,key); }
     @GetMapping("/attempts/{id}/items/{item}/solution") public CatalogDtos.Solution solution(Authentication auth,@PathVariable UUID id,@PathVariable UUID item) { return service.solution(actors.require(auth).getId(),id,item); }
+    @PostMapping("/attempts/{id}/items/{item}/solution-reveal") public CatalogDtos.Solution reveal(Authentication auth,@PathVariable UUID id,@PathVariable UUID item,@Valid @RequestBody SolutionReveal request) { return service.reveal(actors.require(auth).getId(),id,item,request); }
 }

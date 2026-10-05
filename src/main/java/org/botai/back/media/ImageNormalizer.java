@@ -15,6 +15,12 @@ public class ImageNormalizer {
     public record Normalized(byte[] bytes,String mimeType,int width,int height) { }
     private final Semaphore slots=new Semaphore(2);
     public Normalized normalize(InputStream input,boolean avatar) {
+        return normalize(input,avatar,false);
+    }
+    public Normalized normalizeCatalog(InputStream input) {
+        return normalize(input,false,true);
+    }
+    private Normalized normalize(InputStream input,boolean avatar,boolean lossless) {
         int bytesLimit=avatar?2*1024*1024:8*1024*1024;
         if(!slots.tryAcquire())throw new ApiException(429,"image_busy","Повтори загрузку позже");
         try(input) {
@@ -36,8 +42,8 @@ public class ImageNormalizer {
                     if(avatar&&outH>512){outH=512;outW=Math.max(1,(int)((long)w*outH/h));}
                     var clean=new BufferedImage(outW,outH,BufferedImage.TYPE_INT_RGB);var graphics=clean.createGraphics();
                     graphics.setColor(Color.WHITE);graphics.fillRect(0,0,outW,outH);graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BICUBIC);graphics.drawImage(decoded,0,0,outW,outH,null);graphics.dispose();decoded.flush();
-                    var output=new ByteArrayOutputStream();ImageIO.write(clean,"jpeg",output);clean.flush();
-                    if(output.size()>bytesLimit)throw error(413,"file_size");return new Normalized(output.toByteArray(),"image/jpeg",outW,outH);
+                    var output=new ByteArrayOutputStream();ImageIO.write(clean,lossless?"png":"jpeg",output);clean.flush();
+                    if(output.size()>bytesLimit)throw error(413,"file_size");return new Normalized(output.toByteArray(),lossless?"image/png":"image/jpeg",outW,outH);
                 } finally { reader.dispose(); }
             }
         } catch(ApiException e){throw e;}catch(IOException|RuntimeException e){throw error(422,"decode_failed");}finally{slots.release();}

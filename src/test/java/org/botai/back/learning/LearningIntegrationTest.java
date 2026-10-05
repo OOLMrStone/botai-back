@@ -43,7 +43,7 @@ class LearningIntegrationTest {
     AttemptDtos.TrainingRequest request(int number,int count) { return new AttemptDtos.TrainingRequest(CatalogRepository.FORMAT,List.of(new AttemptDtos.Selection(number,null,count)),null,"catalog",null); }
     @Test void completeTaxonomyAndNoAnswerLeak() {
         var result=catalog.catalog();assertThat(result.numbers()).hasSize(20);assertThat(result.format().maxPoints()).isEqualTo(33);
-        assertThat(result.numbers().stream().mapToInt(n->n.topics().size()).sum()).isEqualTo(140);
+        assertThat(result.numbers().stream().mapToInt(n->n.topics().size()).sum()).isEqualTo(141);
         assertThat(result.numbers()).allMatch(n->n.availableCount()==5);
         String publicTask=json.write(catalog.list(user,16,null,null,false,null,20).items().getFirst());
         assertThat(publicTask).doesNotContain("referenceAnswer","referenceSolution","acceptedAnswers").contains("\"isDemo\":true");

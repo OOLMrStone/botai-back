@@ -18,6 +18,8 @@ public class CatalogService {
     public Task task(UUID user,UUID task) { return repository.version(repository.currentVersion(task),user); }
     public Task version(UUID user,UUID version) { return repository.version(version,user); }
     public TaskSnapshot snapshot(UUID version) { return repository.snapshot(version); }
+    public boolean aiInputReady(UUID version) { return repository.aiInputReady(version); }
+    public Solution solution(UUID version,String mediaPrefix) { var snapshot=snapshot(version);return new Solution(snapshot.referenceAnswer(),snapshot.referenceSolution(),repository.referenceContent(version,mediaPrefix),repository.referenceAnswerContent(version,mediaPrefix)); }
     public Page<Task> list(UUID user,Integer number,String topic,String difficulty,boolean favourite,String cursor,Integer size) {
         int limit=Page.limit(size),offset=Page.offset(cursor);
         return Page.of(repository.find(user,number,topic,difficulty,favourite,offset,limit+1).stream().map(id->repository.version(id,user)).toList(),offset,limit);
@@ -28,5 +30,5 @@ public class CatalogService {
         long day=LocalDate.now(ZoneId.of("Europe/Moscow")).toEpochDay();
         return repository.version(ids.get(Math.floorMod(day,ids.size())),user);
     }
-    public Solution dailySolution(UUID user) { var snapshot=snapshot(daily(user).taskVersionId());return new Solution(snapshot.referenceAnswer(),snapshot.referenceSolution()); }
+    public Solution dailySolution(UUID user) { return solution(daily(user).taskVersionId(),"/api/daily-task/solution-media/"); }
 }

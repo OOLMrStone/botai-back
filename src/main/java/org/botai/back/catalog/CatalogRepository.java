@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.UUID;
+import tools.jackson.databind.JsonNode;
 import static org.botai.back.catalog.CatalogDtos.*;
 
 @Repository
@@ -28,7 +29,7 @@ public class CatalogRepository {
                 capabilities.forNumber(r.getInt("exam_number"),r.getInt("max_points")),r.getInt("available"),topics(formatId,r.getInt("exam_number")))).list();
     }
     private List<Topic> topics(String format,int number) {
-        return jdbc.sql("SELECT p.*,(SELECT count(*) FROM task_version_topics vt JOIN tasks t ON t.current_version_id=vt.task_version_id WHERE vt.topic_id=p.id AND NOT t.archived) available FROM topics p WHERE format_id=:format AND exam_number=:number ORDER BY sort_order")
+        return jdbc.sql("SELECT p.*,(SELECT count(*) FROM task_version_topics vt JOIN tasks t ON t.current_version_id=vt.task_version_id WHERE vt.topic_id=p.id AND NOT t.archived) available FROM topics p WHERE format_id=:format AND exam_number=:number AND p.active ORDER BY sort_order")
             .param("format",format).param("number",number).query((r,n)->new Topic(r.getString("id"),r.getString("title"),r.getInt("available"),r.getString("source_url"))).list();
     }
     public UUID currentVersion(UUID taskId) {
@@ -45,7 +46,7 @@ public class CatalogRepository {
             """).param("user",userId).param("version",versionId).query((r,n)->new Task(r.getObject("task_id",UUID.class),versionId,r.getInt("version"),r.getInt("exam_number"),r.getInt("part"),
                 jdbc.sql("SELECT topic_id FROM task_version_topics WHERE task_version_id=:id ORDER BY topic_id").param("id",versionId).query(String.class).list(),
                 r.getString("difficulty"),r.getString("response_type"),r.getInt("max_points"),json.read(r.getString("content")),r.getBoolean("favourite"),r.getString("progress"),
-                capabilities.forNumber(r.getInt("exam_number"),r.getInt("max_points")),r.getBoolean("is_demo"),r.getInt("source_year"))).optional().orElseThrow(ApiException::notFound);
+                r.getInt("exam_number")>=14&&!r.getBoolean("ai_input_ready")?"unsupported":capabilities.forNumber(r.getInt("exam_number"),r.getInt("max_points")),r.getBoolean("is_demo"),r.getObject("source_year",Integer.class),json.read(r.getString("sources")))).optional().orElseThrow(ApiException::notFound);
     }
     public List<UUID> find(UUID user,Integer number,String topic,String difficulty,boolean favourites,int offset,int limit) {
         if(number!=null&&(number<1||number>20))throw ApiException.invalid("Номер задания от 1 до 20");
@@ -62,6 +63,19 @@ public class CatalogRepository {
         return jdbc.sql("SELECT v.*,p.max_points FROM task_versions v JOIN exam_positions p USING(format_id,exam_number) WHERE v.id=:id").param("id",id)
             .query((r,n)->new TaskSnapshot(r.getObject("task_id",UUID.class),id,r.getInt("exam_number"),r.getInt("max_points"),r.getString("statement"),r.getString("reference_answer"),r.getString("reference_solution"),
                 jdbc.sql("SELECT answer FROM task_version_answers WHERE task_version_id=:id ORDER BY answer").param("id",id).query(String.class).list(),r.getBoolean("is_demo"))).optional().orElseThrow(ApiException::notFound);
+    }
+    public boolean aiInputReady(UUID version) {
+        return jdbc.sql("SELECT ai_input_ready FROM task_versions WHERE id=:id").param("id",version).query(Boolean.class).optional().orElse(false);
+    }
+    public JsonNode referenceContent(UUID version,String mediaPrefix) {
+        return referenceBlocks(version,mediaPrefix,"reference_content");
+    }
+    public JsonNode referenceAnswerContent(UUID version,String mediaPrefix) {
+        return referenceBlocks(version,mediaPrefix,"reference_answer_content");
+    }
+    private JsonNode referenceBlocks(UUID version,String mediaPrefix,String column) {
+        String content=jdbc.sql("SELECT "+column+"::text FROM task_versions WHERE id=:id").param("id",version).query(String.class).optional().orElseThrow(ApiException::notFound);
+        return json.read(json.write(json.read(content)).replace("\"src\":\"/api/catalog-reference-media/","\"src\":\""+mediaPrefix));
     }
     public void favourite(UUID user,UUID task,boolean add) {
         currentVersion(task);

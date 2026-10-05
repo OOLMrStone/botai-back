@@ -12,6 +12,12 @@ class ImageNormalizerTest {
     @Test void rejectsUnsafeAndOversizeBytes(){assertThatThrownBy(()->normalizer.normalize(new ByteArrayInputStream("<svg/>".getBytes()),false)).isInstanceOf(ApiException.class);assertThatThrownBy(()->normalizer.normalize(new ByteArrayInputStream(new byte[2*1024*1024+1]),true)).isInstanceOf(ApiException.class).extracting("code").isEqualTo("file_size");}
     @Test void normalizesAndShrinksAvatar()throws Exception{var out=new ByteArrayOutputStream();ImageIO.write(new BufferedImage(1024,768,BufferedImage.TYPE_INT_RGB),"png",out);var result=normalizer.normalize(new ByteArrayInputStream(out.toByteArray()),true);assertThat(result.mimeType()).isEqualTo("image/jpeg");assertThat(result.width()).isEqualTo(512);assertThat(result.height()).isEqualTo(384);assertThat(ImageIO.read(new ByteArrayInputStream(result.bytes())).getWidth()).isEqualTo(512);}
     @Test void rejectsDimensionsBeforePixelDecode()throws Exception{var out=new ByteArrayOutputStream();ImageIO.write(new BufferedImage(8193,1,BufferedImage.TYPE_INT_RGB),"png",out);assertThatThrownBy(()->normalizer.normalize(new ByteArrayInputStream(out.toByteArray()),false)).isInstanceOf(ApiException.class).extracting("code").isEqualTo("image_dimensions");}
+    @Test void catalogGlyphRemainsLosslessWhileStudentOutputRemainsJpeg()throws Exception {
+        var source=new BufferedImage(8,8,BufferedImage.TYPE_INT_RGB);source.setRGB(3,3,0xff3344);var encoded=new ByteArrayOutputStream();ImageIO.write(source,"png",encoded);
+        var normalized=normalizer.normalizeCatalog(new ByteArrayInputStream(encoded.toByteArray()));assertThat(normalized.mimeType()).isEqualTo("image/png");
+        var decoded=ImageIO.read(new ByteArrayInputStream(normalized.bytes()));for(int x=0;x<8;x++)for(int y=0;y<8;y++)assertThat(decoded.getRGB(x,y)).isEqualTo(source.getRGB(x,y));
+        assertThat(normalizer.normalize(new ByteArrayInputStream(encoded.toByteArray()),false).mimeType()).isEqualTo("image/jpeg");
+    }
     @Test void appliesCameraOrientationBeforeDiscardingExif()throws Exception {
         var source=new BufferedImage(40,20,BufferedImage.TYPE_INT_RGB);var g=source.createGraphics();g.setColor(java.awt.Color.RED);g.fillRect(0,0,20,20);g.setColor(java.awt.Color.BLUE);g.fillRect(20,0,20,20);g.dispose();var encoded=new ByteArrayOutputStream();ImageIO.write(source,"jpeg",encoded);byte[] original=encoded.toByteArray();
         for(int orientation=1;orientation<=8;orientation++){

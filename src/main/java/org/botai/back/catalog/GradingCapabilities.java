@@ -15,7 +15,8 @@ public class GradingCapabilities {
         if(adapter==null)return "unavailable";
         try {
             var capability=adapter.capabilities().get(number);
-            if(capability==null||!capability.supported())return "unsupported";
+            if(capability==null)return "unavailable";
+            if(!capability.supported())return "unsupported";
             return capability.maxScore()==maxPoints?"available":"unavailable";
         } catch(RuntimeException failure) { return "unavailable"; }
     }

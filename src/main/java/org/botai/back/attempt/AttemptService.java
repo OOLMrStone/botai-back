@@ -142,8 +142,36 @@ public class AttemptService {
             }).list();return Page.of(rows,offset,limit);
     }
     public CatalogDtos.Solution solution(UUID user,UUID attempt,UUID item) {
-        UUID version=jdbc.sql("SELECT i.task_version_id FROM attempt_items i JOIN attempts a ON a.id=i.attempt_id WHERE a.user_id=:user AND a.id=:attempt AND i.id=:item AND EXISTS(SELECT 1 FROM grading_submissions s JOIN grading_results r ON r.submission_id=s.id WHERE s.attempt_item_id=i.id AND s.input_revision=i.answer_revision AND s.status='graded' AND r.is_graded)")
+        return catalog.solution(solutionVersion(user,attempt,item),"/api/attempts/"+attempt+"/items/"+item+"/solution-media/");
+    }
+    @Transactional public CatalogDtos.Solution reveal(UUID user,UUID attempt,UUID item,SolutionReveal request) {
+        if(request.expectedAnswerRevision()==null||(request.expectedSubmissionId()==null)!=(request.expectedSubmissionRevision()==null))throw ApiException.invalid("Нужна текущая версия ответа");
+        jdbc.sql("SELECT id FROM attempts WHERE id=:attempt AND user_id=:user FOR UPDATE").param("attempt",attempt).param("user",user).query(UUID.class).optional().orElseThrow(ApiException::notFound);
+        var current=jdbc.sql("SELECT task_version_id,answer_revision FROM attempt_items WHERE id=:item AND attempt_id=:attempt FOR UPDATE").param("item",item).param("attempt",attempt).query((r,n)->new Object[]{r.getObject("task_version_id",UUID.class),r.getInt("answer_revision")}).optional().orElseThrow(ApiException::notFound);
+        UUID version=(UUID)current[0];int revision=(int)current[1];
+        var submissions=jdbc.sql("SELECT id,revision FROM grading_submissions WHERE attempt_item_id=:item AND user_id=:user ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE").param("item",item).param("user",user).query((r,n)->new Object[]{r.getObject("id",UUID.class),r.getInt("revision")}).list();
+        UUID submission=submissions.isEmpty()?null:(UUID)submissions.getFirst()[0];Integer submissionRevision=submissions.isEmpty()?null:(Integer)submissions.getFirst()[1];
+        if(revision!=request.expectedAnswerRevision()||!Objects.equals(submission,request.expectedSubmissionId())||!Objects.equals(submissionRevision,request.expectedSubmissionRevision()))throw ApiException.conflict("revision_conflict");
+        if(submission!=null&&jdbc.sql("SELECT EXISTS(SELECT 1 FROM stored_objects WHERE submission_id=:submission AND state='staged')").param("submission",submission).query(Boolean.class).single())throw ApiException.conflict("uploads_in_flight");
+        var task=catalog.version(user,version);
+        if(task.part()!=2||!task.gradingCapability().equals("unsupported"))throw new ApiException(403,"solution_reveal_unavailable","Решение можно открыть после проверки");
+        String hash=json.hash(List.of(version,revision,submission==null?"none":submission,submissionRevision==null?-1:submissionRevision));
+        // The immutable grant is also the audit event; replay cannot add another event or a grade.
+        jdbc.sql("INSERT INTO solution_reveal_grants(id,user_id,attempt_id,item_id,task_version_id,answer_revision,latest_submission_id,latest_submission_revision,input_fingerprint) VALUES(:id,:user,:attempt,:item,:version,:revision,:submission,:submissionRevision,:hash) ON CONFLICT(user_id,item_id,input_fingerprint) DO NOTHING")
+            .param("id",UUID.randomUUID()).param("user",user).param("attempt",attempt).param("item",item).param("version",version).param("revision",revision).param("submission",submission).param("submissionRevision",submissionRevision).param("hash",hash).update();
+        return solution(user,attempt,item);
+    }
+    public UUID solutionVersion(UUID user,UUID attempt,UUID item) {
+        UUID version=jdbc.sql("""
+            SELECT i.task_version_id FROM attempt_items i JOIN attempts a ON a.id=i.attempt_id
+            LEFT JOIN LATERAL(SELECT id,revision FROM grading_submissions WHERE attempt_item_id=i.id AND user_id=a.user_id ORDER BY created_at DESC,id DESC LIMIT 1) latest ON true
+            WHERE a.user_id=:user AND a.id=:attempt AND i.id=:item AND
+                (EXISTS(SELECT 1 FROM grading_submissions s JOIN grading_results r ON r.submission_id=s.id WHERE s.attempt_item_id=i.id AND s.input_revision=i.answer_revision AND s.status='graded' AND r.is_graded)
+                OR EXISTS(SELECT 1 FROM solution_reveal_grants g WHERE g.user_id=a.user_id AND g.attempt_id=a.id AND g.item_id=i.id AND g.task_version_id=i.task_version_id AND g.answer_revision=i.answer_revision
+                    AND g.latest_submission_id IS NOT DISTINCT FROM latest.id AND g.latest_submission_revision IS NOT DISTINCT FROM latest.revision
+                    AND NOT EXISTS(SELECT 1 FROM stored_objects WHERE submission_id=latest.id AND state='staged')))
+            """)
             .param("user",user).param("attempt",attempt).param("item",item).query(UUID.class).optional().orElseThrow(ApiException::notFound);
-        var snapshot=catalog.snapshot(version);return new CatalogDtos.Solution(snapshot.referenceAnswer(),snapshot.referenceSolution());
+        return version;
     }
 }

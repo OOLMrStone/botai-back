@@ -44,7 +44,7 @@ public class SubmissionService {
         int ready=store.db().queryForObject("SELECT count(*) FROM stored_objects WHERE submission_id=? AND state='ready'",Integer.class,id);if(ready<1)return new ApiException(422,"images_required","Добавь фотографию решения");
         var task=catalog.snapshot(s.version());var capability=capabilities.get(task.taskNumber());
         if(capability==null){store.event(id,"finalize_unavailable",user,Map.of());return new ApiException(503,"grading_unavailable","Проверка временно недоступна");}
-        if(!capability.supported()){store.terminal(s,"unsupported","unsupported_task");result(s,false,null,task.maxScore(),null,"Проверка этого задания пока недоступна",task.isDemo(),null,null,null);return null;}
+        if(!capability.supported()||!catalog.aiInputReady(s.version())){store.terminal(s,"unsupported","unsupported_task");result(s,false,null,task.maxScore(),null,"Проверка этого задания пока недоступна",task.isDemo(),null,null,null);return null;}
         String plan=store.db().queryForObject("SELECT plan_id FROM users WHERE id=? AND enabled FOR UPDATE",String.class,user);
         if(!"pro".equals(plan)){store.event(id,"entitlement_denied",user,Map.of());return new ApiException(403,"ai_review_required","Проверка фото доступна на тарифе Pro");}
         // Global advisory lock makes capacity admission atomic across users without holding it during HTTP.

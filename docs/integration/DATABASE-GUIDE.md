@@ -62,6 +62,25 @@ erDiagram
 
 ## Посмотреть самому
 
+### Добавление каталога V7 — пока не применено стендам
+
+Код миграции и importer проверены на отдельном PostgreSQL; рабочие local/stage сохраняют V1–V6 и прежние данные до одобренного pilot. Новый provider identity не заменяет тему и не меняет пользовательскую историю:
+
+```mermaid
+flowchart LR
+    P["task_source_links: provider + external_id"] --> T["tasks: стабильный UUID"]
+    T --> C["current_version_id: текущая выдача"]
+    C --> V["task_versions: immutable условие + sources"]
+    A["attempt_items: сохранённая попытка"] --> H["прежняя immutable task_version"]
+    V --> M["task_version_assets → catalog_assets"]
+    M --> S["ready / statement: условие"]
+    M --> R["ready / reference: ответ и решение"]
+```
+
+После применения V7 `operator_task_sources` покажет provider/external ID и UUID задания; `operator_task_versions` — публичное происхождение `sources` и готовность текстового AI input. `operator_catalog_assets` покажет состояние и размеры, без bucket/key и содержимого; `operator_import_runs/items` — исходы публикации и причины карантина. Неизвестный год остаётся null. Карантин не появляется в текущей выдаче; повторный импорт не создаёт вторую задачу.
+
+`sources` содержит только сведения об источнике. Ответ, точное решение и их изображения остаются за отдельной границей раскрытия. Для extended stable unsupported ученик явно открывает эталон без оценки: immutable grant привязан к revision текста/рисунка и последней submission ID/revision. Новое фото или правка делает grant недействительным. Это не результат AI и не начисление progress. Подробнее: [контракт импорта](CONTENT-IMPORT-SPEC.md).
+
 Локально открыть [Adminer](http://127.0.0.1:18090/?pgsql=postgres&username=botai_operator&db=botai), система PostgreSQL, server `postgres`, database `botai`, user `botai_operator`. Пароль в **`botai-back/runtime/credentials.json`**, файл0600 вне Git. Включение: `scripts/integration/compose.sh --profile ops up -d adminer`.
 
 Оператор по умолчанию read-only. Доступны справочники и `operator_accounts/tasks/task_versions/attempts/attempt_items/submissions/results/objects/jobs/runs/activity_days`. Вид `operator_accounts` не содержит email, password_hash или provider ID; `operator_objects` скрывает S3 keys; результаты не содержат точный AI JSON/эталоны. SELECT на users, sessions, OTP, answer keys и raw objects/results проверен как запрещённый. Продуктовая модерация — отдельная `/admin/submissions` с ADMIN, не Adminer.

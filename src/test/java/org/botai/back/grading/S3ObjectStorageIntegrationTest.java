@@ -13,6 +13,12 @@ import static org.assertj.core.api.Assertions.*;
 
 @EnabledIfEnvironmentVariable(named="S3_ACCESS_KEY",matches=".+")
 class S3ObjectStorageIntegrationTest {
+    @Test void officialSdkPrivateLosslessCatalogPngRoundtrip()throws Exception {
+        String endpoint=System.getenv().getOrDefault("S3_TEST_ENDPOINT","http://garage:3900"),bucket=System.getenv().getOrDefault("S3_BUCKET","botai");var storage=new S3ObjectStorage(endpoint,bucket,System.getenv("S3_ACCESS_KEY"),System.getenv("S3_SECRET_KEY"),"garage");
+        var source=new ByteArrayOutputStream();ImageIO.write(new BufferedImage(16,16,BufferedImage.TYPE_INT_RGB),"png",source);var image=new ImageNormalizer().normalizeCatalog(new ByteArrayInputStream(source.toByteArray()));String key="catalog/test-"+UUID.randomUUID()+".png";
+        try { storage.put(key,image.bytes(),image.mimeType());assertThat(storage.get(key,8388608)).isEqualTo(image.bytes());assertThat(image.mimeType()).isEqualTo("image/png");assertThat(HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(endpoint+"/"+bucket+"/"+key)).GET().build(),HttpResponse.BodyHandlers.discarding()).statusCode()).isIn(403,404); }
+        finally { storage.delete(key); }
+    }
     @Test void officialSdkPrivateNormalizedPhotoAndAvatarRoundtrip()throws Exception {
         String endpoint=System.getenv().getOrDefault("S3_TEST_ENDPOINT","http://garage:3900");String bucket=System.getenv().getOrDefault("S3_BUCKET","botai");
         var storage=new S3ObjectStorage(endpoint,bucket,System.getenv("S3_ACCESS_KEY"),System.getenv("S3_SECRET_KEY"),"garage");var source=new ByteArrayOutputStream();ImageIO.write(new BufferedImage(800,600,BufferedImage.TYPE_INT_RGB),"png",source);
