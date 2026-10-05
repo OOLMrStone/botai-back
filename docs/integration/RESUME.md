@@ -1,5 +1,15 @@
 # Точка продолжения — 2026-10-05
 
+## Последнее уточнение пользователя и текущий UI
+
+- Mac разблокирован. Пользователь проверяет сайт/БД в Chrome; его окна не трогать. Старые тестовые аккаунты **оставить** (последнее явное уточнение отменяет разрешение удалить).
+- По запросу добавлен `test@test.test` на обоих стендах; пароль только в user message/private credentials, не копировать в документы. USER+Pro, почта подтверждена, actual login PASS. Local ID125b5407-9c4a-484e-8852-6d827e45b4fd; stage IDc2994056-436d-401d-a0ea-1974a0c1dd3d. Existing accounts/data сохранены.
+- Пользователь ошибочно выбрал MySQL в Adminer; переключил на PostgreSQL и вошёл. Verified deep links с `?pgsql=postgres&username=botai_operator&db=botai` внесены в DATABASE-GUIDE/DELIVERY, docs commit98c980a. Затем объяснены кнопка «выбрать»,4 operator views и smoke: подборка3→сохранить→HOME/reload/resume→attempt +3items. Не утверждать, что operator_attempt_items показывает текст ответа: там только composition/revision.
+- IAB после unlock всё ещё unavailable; native Safari работает в отдельном private QA window. Независимый final gate уже PASS на обоих: login/HOME/catalog/exactattempt+oldstroke/answerSaved/reload (local94dd…54321; stage2e06…654). Stage session-bootstrap теперь PASS; local admin list тоже. Chrome user guard не обходить.
+- `dependency_security_review` (Astra) завершился ошибкой model capacity; оставшиеся UI проверки переданы `frontend_completion` (Sol). Остались fresh email URLs в ignored0600 `runtime/evidence/final-ui-mail-links.json` (local/stage, ещё не consumed), fresh console и long20 HOME label320. Native screenshot/drag иногда не видит occluded Safari. Root спросил async разрешить2–3min не переключать окна; ответа пока нет, не поднимать Safari до ответа. Safari Develop toggle root уже разрешил через UI, восстановить исходное состояние после проверки; remote automation/security не менять. Старую широкую матрицу не повторять.
+- Админка реализована только для просмотра проверок: `/admin/submissions` list/filter/details/events/private photo/exact AI JSON, серверный ADMIN + access audit. Users/roles/ban/tasksCRUD/manualgrade/dashboard не реализованы; это объяснено пользователю.
+- DATABASE-GUIDE теперь начинается с «Проверка за5минут» (конкретные8 шагов, kind/status/index0based/views, без обещания rawanswers). Root RESUME + этот guide пока docs-only unstaged; runtime owner должен checkpoint/sync после finalQA. Код/sourceb639 не менялся.
+
 ## Контракт
 
 - Пользователь возобновил работу: довести до готового качественного результата. Root — оркестратор и документы; весь продуктовый код/тестирование/deploy делегировать. Разрешён выбор моделей: Astra для сложного review, Sol для реализации. Лимит: root +3 агента.
@@ -15,8 +25,8 @@
 
 - Bounded update без новых библиотек, major downgrades или audit force. Дополнительная UI-правка: длинный HOME CTA20 использует truncate с полным доступным именем; итоговый визуальный повтор ещё нужен.
 - Старый browser PASS digest `dff3…` относится к версии до security update. Повторить на обоих новых образах: fresh console, login/HOME/catalog, exact answer+stroke save/reload, fresh unconsumed generated email URL, HOME320 label/различие подборки и пробника. Старую широкую матрицу не повторять.
-- **Внешняя блокировка:** Mac locked, cua_repl getState без apps/browsers; createBrowserTab iab visible true/false недоступен. Async вопрос пользователю о разблокировке задан, ответа пока нет. Root open_in_codex site+DBguide только queued, не открыты. Не заявлять новый UI PASS.
-- Tool thread limit не даёт восстановить old final_browser_qa; доступен `dependency_security_review`, он может продолжить narrow UI после восстановления среды. Старый QA действительно использовал cua_repl, НЕ node_repl bootstrap: createBrowserTab(iab,url) без visible:true работал. Сейчас documented visible:false тоже отказал. Никаких raw CDP/OS unlock обходов; повторить только после изменения доступности.
+- Mac разблокирован по ответу пользователя; IAB всё ещё unavailable. Native Safari narrow UI идёт, точный текущий результат в начале файла. Ранее root open_in_codex site+DBguide вернул queued, не opened. Полный финальный UI PASS ещё не заявлен.
+- Tool thread limit не даёт восстановить old final_browser_qa; продолжает `dependency_security_review`. Старый QA использовал cua_repl, НЕ node_repl bootstrap. IAB createBrowserTab без visible:true работал раньше, сейчас visible:false тоже unavailable. Никаких raw CDP/OS unlock обходов; user Chrome занят, не вмешиваться.
 - Tunnel восстановлен: stage login/HOME/attempt открылись, reload session-bootstrap ещё не PASS. Runtime spaced login/CSRF/me/home200 (0.03–0.13s), remote healthy. Перед final QA закрыть task-owned старые вкладки localhost13000: cookies общие со stage localhost23000, фоновые запросы могут сбрасывать SESSION. Это гипотеза. Local использовать только12713000.
 - Front локально сохранён в develop `6bcd2821a430268cfcee37eccde9f5fff7490423` обычным hook; source digest совпадает с обоими образами. Пока UI внешне недоступен, это сохранение проверенного кода, не финальный UI PASS. No push/main merge.
 
