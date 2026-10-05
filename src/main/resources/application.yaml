@@ -83,4 +83,10 @@ server:
         name: SESSION
         http-only: true   # not readable from JavaScript (XSS mitigation)
         same-site: lax    # cookie not sent on cross-site POSTs (CSRF mitigation)
-        secure: false     # TODO: set to true in production (requires HTTPS)
+        secure: ${SESSION_COOKIE_SECURE:false}
+
+# Streaming ingress remains bounded before image decoding.
+spring.servlet.multipart.max-file-size: 8MB
+spring.servlet.multipart.max-request-size: 9MB
+spring.jackson.deserialization.fail-on-unknown-properties: true
+spring.jackson.default-property-inclusion: non_null

@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "management.server.port=0")
+        properties = {"management.server.port=0", "app.grading.worker-enabled=false"})
 @AutoConfigureTestRestTemplate
 @Testcontainers
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -162,8 +162,7 @@ class AuthFlowIntegrationTest {
         assertThat(unknownLogin.getBody()).contains("Invalid email or password");
 
         // missing CSRF token -> rejected before the endpoint runs, even with
-        // valid credentials (401 because the caller is anonymous; authenticated
-        // callers would get 403)
+        // valid credentials (403 is the frozen API CSRF contract)
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         ResponseEntity<String> noCsrf = rest.exchange("/api/auth/login", HttpMethod.POST,
@@ -171,7 +170,7 @@ class AuthFlowIntegrationTest {
                         {"email": "%s", "password": "%s"}
                         """.formatted(EMAIL, PASSWORD), headers),
                 String.class);
-        assertThat(noCsrf.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(noCsrf.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(extractCookie(noCsrf.getHeaders(), "SESSION")).isNull();
 
         // weak password -> 400 (bean validation)
@@ -346,6 +345,28 @@ class AuthFlowIntegrationTest {
     }
 
     /** Pulls the verification link out of the email and returns its token parameter. */
+    @Test
+    @Order(7)
+    void unicodePasswordAndProfilePrivilegeBoundary() {
+        String csrf=extractCookie(rest.getForEntity("/api/auth/csrf",String.class).getHeaders(),"XSRF-TOKEN");
+        var tooLong=postJson("/api/auth/register", "{\"email\":\"utf8@example.test\",\"password\":\""+"я".repeat(37)+"\"}",csrf,csrf,null);
+        assertThat(tooLong.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(tooLong.getBody()).contains("validation_error","requestId");
+        String email="profile-boundary@example.test";
+        assertThat(postJson("/api/auth/register","{\"email\":\""+email+"\",\"password\":\""+PASSWORD+"\"}",csrf,csrf,null).getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        var login=postJson("/api/auth/login","{\"email\":\""+email+"\",\"password\":\""+PASSWORD+"\"}",csrf,csrf,null);
+        String session=extractCookie(login.getHeaders(),"SESSION");
+        assertThat(login.getHeaders().get(HttpHeaders.SET_COOKIE)).anyMatch(cookie->cookie.startsWith("XSRF-TOKEN="));
+        var fresh=getWithCookies("/api/auth/csrf","SESSION="+session);String token=extractCookie(fresh.getHeaders(),"XSRF-TOKEN");
+        assertThat(token).isNotBlank().isNotEqualTo(csrf);
+        HttpHeaders headers=new HttpHeaders();headers.setContentType(MediaType.APPLICATION_JSON);headers.set("Cookie","SESSION="+session+"; XSRF-TOKEN="+token);headers.set("X-XSRF-TOKEN",token);
+        var elevation=rest.exchange("/api/profile",HttpMethod.PATCH,new HttpEntity<>("{\"plan\":\"pro\"}",headers),String.class);
+        assertThat(elevation.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(getWithCookies("/api/profile","SESSION="+session).getBody()).contains("\"plan\":\"free\"").doesNotContain("passwordHash");
+        assertThat(getWithCookies("/api/admin/submissions","SESSION="+session).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(getWithCookies("/api/auth/session/verified","SESSION="+session).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
     private String latestEmailedToken(String toAddress) {
         String base = "http://" + mailpit.getHost() + ":" + mailpit.getMappedPort(8025);
         for (int i = 0; i < 50; i++) {

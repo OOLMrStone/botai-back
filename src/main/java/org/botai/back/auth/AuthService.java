@@ -43,7 +43,10 @@ import java.util.UUID;
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final org.botai.back.security.CurrentActor currentActor;
     private final PasswordEncoder passwordEncoder;
+    private final org.botai.back.security.RateLimits rateLimits;
+    private final org.springframework.security.web.authentication.session.SessionAuthenticationStrategy sessionAuthenticationStrategy;
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
     private final OneTimeCodeService oneTimeCodeService;
@@ -61,6 +64,8 @@ public class AuthService {
     @Transactional
     public User register(RegisterRequest request) {
         String email = normalize(request.email());
+        org.botai.back.security.PasswordRules.validate(request.password());
+        rateLimits.check("register-account", email, 5, 3600);
         if (userRepository.existsByEmail(email)) {
             throw new EmailAlreadyUsedException(email);
         }
@@ -122,6 +127,8 @@ public class AuthService {
      */
     public User login(LoginRequest request, HttpServletRequest servletRequest,
                       HttpServletResponse servletResponse) {
+        org.botai.back.security.PasswordRules.validate(request.password());
+        rateLimits.check("login-account", normalize(request.email()), 10, 60);
         Authentication authentication;
         try {
             authentication = authenticationManager.authenticate(
@@ -178,6 +185,7 @@ public class AuthService {
      */
     @Transactional
     public void resetPassword(PasswordResetRequest request) {
+        org.botai.back.security.PasswordRules.validate(request.newPassword());
         User user = enabledUserByEmail(request.email())
                 .filter(u -> oneTimeCodeService.consume(u.getId(), CodePurpose.PASSWORD_RESET, request.code()))
                 .orElseThrow(InvalidCodeException::new);
@@ -191,11 +199,8 @@ public class AuthService {
         meterRegistry.counter("auth.password.resets").increment();
     }
 
-    @Transactional(readOnly = true)
     public User currentUser(Authentication authentication) {
-        return userRepository.findByEmail(authentication.getName())
-                .orElseThrow(() -> new IllegalStateException(
-                        "Authenticated user not found: " + authentication.getName()));
+        return currentActor.require(authentication);
     }
 
     private void requestCode(String email, CodePurpose purpose, String metricTag) {
@@ -238,9 +243,7 @@ public class AuthService {
                                   HttpServletResponse servletResponse) {
         // Rotate the session id so any session established before login cannot be
         // reused by an attacker who planted it (session fixation).
-        if (servletRequest.getSession(false) != null) {
-            servletRequest.changeSessionId();
-        }
+        sessionAuthenticationStrategy.onAuthentication(authentication, servletRequest, servletResponse);
 
         SecurityContext context = securityContextHolderStrategy.createEmptyContext();
         context.setAuthentication(authentication);

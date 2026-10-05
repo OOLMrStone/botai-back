@@ -11,13 +11,13 @@ public class AuthExceptionHandler {
 
     @ExceptionHandler(EmailAlreadyUsedException.class)
     public ProblemDetail handleEmailTaken(EmailAlreadyUsedException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        return org.botai.back.common.ApiProblems.of(409,"email_in_use","Этот email уже используется");
     }
 
     /** Wrong/expired one-time code (or unknown account - indistinguishable on purpose). */
     @ExceptionHandler(InvalidCodeException.class)
     public ProblemDetail handleInvalidCode(InvalidCodeException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
+        return org.botai.back.common.ApiProblems.of(401,"invalid_code",ex.getMessage());
     }
 
     /**
@@ -27,6 +27,6 @@ public class AuthExceptionHandler {
      */
     @ExceptionHandler(AuthenticationException.class)
     public ProblemDetail handleAuthenticationFailure(AuthenticationException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Invalid email or password");
+        return org.botai.back.common.ApiProblems.of(401,"invalid_credentials","Invalid email or password");
     }
 }

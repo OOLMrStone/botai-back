@@ -24,13 +24,14 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, CookieCsrfTokenRepository csrfRepository,
+            RateLimits rateLimits, tools.jackson.databind.ObjectMapper mapper, org.botai.back.user.UserRepository users) throws Exception {
         http
                 // CSRF: double-submit pattern for the SPA. The token travels in the
                 // XSRF-TOKEN cookie (readable by the frontend), which sends it back
                 // in the X-XSRF-TOKEN header on every mutating request.
                 .csrf(csrf -> csrf
-                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRepository(csrfRepository)
                         .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
@@ -42,6 +43,8 @@ public class SecurityConfig {
                         // management port, which must stay internal-only; no
                         // additional auth on top of that network boundary.
                         .requestMatchers(EndpointRequest.toAnyEndpoint()).permitAll()
+                        .requestMatchers("/api/admin/**").access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
+                            users.findByEmail(authentication.get().getName()).filter(org.botai.back.user.User::isEnabled).filter(user -> user.getRole() == org.botai.back.user.Role.ADMIN).isPresent()))
                         .anyRequest().authenticated())
                 // Session fixation protection: the session id rotates on login
                 // (see AuthService), so a pre-login cookie can never be promoted
@@ -54,7 +57,15 @@ public class SecurityConfig {
                 // This is a JSON API: unauthenticated requests get a 401, never a
                 // redirect to a login page.
                 .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
+                        .authenticationEntryPoint((request, response, exception) -> {
+                            response.setStatus(401); response.setContentType("application/problem+json");
+                            mapper.writeValue(response.getOutputStream(), org.botai.back.common.ApiProblems.of(401,"session_required","Войди в аккаунт"));
+                        })
+                        .accessDeniedHandler((request, response, exception) -> {
+                            response.setStatus(403); response.setContentType("application/problem+json");
+                            mapper.writeValue(response.getOutputStream(), org.botai.back.common.ApiProblems.of(403,"forbidden","Доступ запрещён"));
+                        }))
+                .addFilterBefore(new AuthRateLimitFilter(rateLimits, mapper), org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
 
         // ---------------------------------------------------------------------
         // External login (Google etc.) — enable together with the
@@ -70,6 +81,18 @@ public class SecurityConfig {
         // ---------------------------------------------------------------------
 
         return http.build();
+    }
+
+    @Bean
+    CookieCsrfTokenRepository csrfTokenRepository() {
+        return CookieCsrfTokenRepository.withHttpOnlyFalse();
+    }
+
+    @Bean
+    org.springframework.security.web.authentication.session.SessionAuthenticationStrategy sessionAuthenticationStrategy(CookieCsrfTokenRepository csrfRepository) {
+        return new org.springframework.security.web.authentication.session.CompositeSessionAuthenticationStrategy(java.util.List.of(
+            new org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy(),
+            new org.springframework.security.web.csrf.CsrfAuthenticationStrategy(csrfRepository)));
     }
 
     /**

@@ -112,6 +112,13 @@ public class AuthController {
         return UserResponse.from(authService.currentUser(authentication));
     }
 
+    @GetMapping("/session/verified")
+    public void verifiedSession(Authentication authentication) {
+        if (!authService.currentUser(authentication).isEmailVerified()) {
+            throw new org.botai.back.common.ApiException(403,"email_unverified","Подтверди email");
+        }
+    }
+
     // POST /api/auth/logout is handled by Spring Security's logout filter
     // (see SecurityConfig): invalidates the session and deletes the cookie.
 }
