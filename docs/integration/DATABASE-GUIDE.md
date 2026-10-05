@@ -1,0 +1,69 @@
+# Фактическая база BotAI
+
+Схема проверена запросами `information_schema` и `pg_constraint` на локальном PostgreSQL **17.11**, после успешных миграций **V1–V6**, 2026-10-05. Это отдельная интеграционная база; production auth/session база не изменена.
+
+## Что где хранится
+
+- `users` — существующий аккаунт и дата регистрации; связи на `plans`, `preparation_levels`, `preparation_goals`, аватар. Пароль, сессии и OTP остаются в закрытой auth-части (`spring_session`, `spring_session_attributes`, `one_time_codes`).
+- `subjects → exam_formats → exam_positions → topics` — профильная математика, формат20, позиции и140 тем. `tasks → task_versions` — каноническое задание и неизменяемые версии; `task_version_topics` связывает темы, `task_version_answers` содержит закрытые допустимые ответы. В public Task эталонов нет.
+- **`attempts` — сохранённая обёртка коллекции/пробника**, а не временный выбор frontend. В ней владелец, тип, статус, revision и current_index. `attempt_items` фиксирует порядок и точную task_version, ответ, drawing и revision. `practice_selections` сохраняет критерии выбора. Несколько unfinished попыток сосуществуют; возврат открывает тот же UUID.
+- `exam_templates` / `exam_template_items` — опубликованный неизменяемый шаблон ровно20 позиций; каждый запуск создаёт отдельную историю в `attempts`.
+- `grading_submissions` — намерение проверки до загрузки, жизненный цикл, owner/attempt/item и revision; `submission_events` — история; `grading_jobs` — PostgreSQL очередь; `grading_runs` — run/fence/provenance; `grading_results` — один терминальный результат и закрытый точный AI JSON. Отказ/ошибка/unsupported не превращаются в нулевую оценку.
+- `stored_objects` хранит **метаданные** частных объектов: owner, submission, purpose, размер, тип, состояние, ключ. **Байты фото и аватаров находятся в private Garage S3**, отдельно от PG. API `/api/media/{id}` проверяет владельца/admin, отдаёт no-store; публичной S3 ссылки нет. Backup должен включать PG **и** Garage metadata/data.
+- `user_favourites`, `user_task_results`, `user_activity_days`, `activity_events` — отношения конкретного пользователя и серверный прогресс; синтетические задания и mock AI его не начисляют. `attempt_checks` обеспечивает дедупликацию; `admin_access_events` фиксирует просмотр модератором; `rate_limit_windows` — технические лимиты.
+
+```mermaid
+erDiagram
+    users ||--o{ attempts : owns
+    users }o--|| plans : plan
+    users }o--o| preparation_levels : level
+    users }o--o| preparation_goals : goal
+    subjects ||--o{ exam_formats : formats
+    exam_formats ||--o{ exam_positions : positions
+    exam_positions ||--o{ topics : taxonomy
+    tasks ||--|{ task_versions : versions
+    task_versions ||--o{ task_version_topics : topics
+    topics ||--o{ task_version_topics : links
+    task_versions ||--o{ task_version_answers : privateAnswers
+    exam_templates ||--|{ exam_template_items : exact20
+    task_versions ||--o{ exam_template_items : snapshots
+    exam_templates |o--o{ attempts : runs
+    attempts ||--|{ attempt_items : immutableOrder
+    attempts ||--o{ practice_selections : selection
+    task_versions ||--o{ attempt_items : version
+    users ||--o{ grading_submissions : owner
+    attempts |o--o{ grading_submissions : attempt
+    attempt_items |o--o{ grading_submissions : item
+    grading_submissions ||--o{ submission_events : lifecycle
+    grading_submissions ||--o| grading_results : terminal
+    grading_submissions ||--o| grading_jobs : queue
+    grading_submissions ||--o| grading_runs : run
+    grading_submissions |o--o{ stored_objects : photos
+    users ||--o{ stored_objects : privateMedia
+    users ||--o{ user_favourites : favourites
+    tasks ||--o{ user_favourites : task
+    users ||--o{ user_task_results : progress
+    users ||--o{ user_activity_days : days
+    users ||--o{ activity_events : minutes
+```
+
+## Посмотреть самому
+
+Локально открыть [Adminer](http://127.0.0.1:18090), система PostgreSQL, server `postgres`, database `botai`, user `botai_operator`. Пароль в **`botai-back/runtime/credentials.json`**, файл0600 вне Git. Включение: `scripts/integration/compose.sh --profile ops up -d adminer`.
+
+Оператор по умолчанию read-only. Доступны справочники и `operator_accounts/tasks/task_versions/attempts/attempt_items/submissions/results/objects/jobs/runs/activity_days`. Вид `operator_accounts` не содержит email, password_hash или provider ID; `operator_objects` скрывает S3 keys; результаты не содержат точный AI JSON/эталоны. SELECT на users, sessions, OTP, answer keys и raw objects/results проверен как запрещённый. Продуктовая модерация — отдельная `/admin/submissions` с ADMIN, не Adminer.
+
+Полезные SQL:
+
+```sql
+SELECT * FROM operator_attempts ORDER BY updated_at DESC LIMIT 50;
+SELECT * FROM operator_attempt_items WHERE attempt_id = 'UUID' ORDER BY ordinal;
+SELECT * FROM operator_submissions ORDER BY created_at DESC LIMIT 50;
+SELECT * FROM operator_objects ORDER BY created_at DESC LIMIT 50;
+SELECT table_name,column_name,data_type FROM information_schema.columns
+WHERE table_schema='public' ORDER BY table_name,ordinal_position;
+```
+
+Структура физической схемы может быть видна в information_schema только в пределах разрешений роли. Полный introspection для администратора через локальный контейнер: `scripts/integration/compose.sh exec postgres psql -U botai_migrator -d botai`; не публиковать его credentials и не использовать migrator для обычного просмотра.
+
+Для отдельного серверного stage: `ssh -N -L localhost:23000:127.0.0.1:13000 -L localhost:28090:127.0.0.1:18090 -L localhost:28025:127.0.0.1:18025 ege-server`. Серверный backend/PG/Garage/AI уже работают, Adminer доступен на http://localhost:28090 через этот tunnel. Сайт работает на http://localhost:23000. Stage credentials отдельно `/srv/botai-integration/runtime/credentials.json`; это свежие серверные учётные данные, не локальные пароли. Серверная отдельная база также применяет V1–V6; backup/restore PostgreSQL и S3 проверен, фактическое состояние в RUNTIME-EVIDENCE.md.
