@@ -2,7 +2,7 @@
 -- exact provider output and S3 object keys are deliberately absent.
 CREATE OR REPLACE VIEW operator_accounts AS SELECT id,display_name,role,enabled,created_at,plan_id,level_id,goal_id,daily_goal_minutes,time_zone FROM users;
 CREATE OR REPLACE VIEW operator_tasks AS SELECT id,current_version_id,archived,created_at FROM tasks;
-CREATE OR REPLACE VIEW operator_task_versions AS SELECT id,task_id,version,format_id,exam_number,difficulty,source_year,is_demo,created_at,sources,ai_input_ready FROM task_versions;
+CREATE OR REPLACE VIEW operator_task_versions AS SELECT id,task_id,version,format_id,exam_number,difficulty,source_year,is_demo,created_at,sources,ai_input_ready,difficulty_level,is_grob FROM task_versions;
 CREATE OR REPLACE VIEW operator_task_sources AS SELECT provider,external_id,task_id FROM task_source_links;
 CREATE OR REPLACE VIEW operator_catalog_assets AS SELECT id,state,purpose,mime_type,size_bytes,width,height,original_sha256,normalized_sha256,created_at FROM catalog_assets;
 CREATE OR REPLACE VIEW operator_import_runs AS SELECT id,manifest_sha256,state,created_at,finished_at FROM content_import_runs;

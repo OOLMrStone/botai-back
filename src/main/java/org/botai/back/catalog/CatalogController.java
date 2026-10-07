@@ -17,7 +17,7 @@ public class CatalogController {
     private final CurrentActor actors;
     @GetMapping("/catalog") public Catalog catalog(Authentication auth) { actors.require(auth);return service.catalog(); }
     @GetMapping("/tasks") public Page<Task> tasks(Authentication auth,@RequestParam(required=false) Integer examNumber,@RequestParam(required=false) String topicId,
-            @RequestParam(required=false) String difficulty,@RequestParam(defaultValue="false") boolean favourite,@RequestParam(required=false) String cursor,@RequestParam(required=false) Integer limit) {
+            @RequestParam(required=false) Integer difficulty,@RequestParam(defaultValue="false") boolean favourite,@RequestParam(required=false) String cursor,@RequestParam(required=false) Integer limit) {
         return service.list(actors.require(auth).getId(),examNumber,topicId,difficulty,favourite,cursor,limit);
     }
     @GetMapping("/tasks/{id}") public Task task(Authentication auth,@PathVariable UUID id) { return service.task(actors.require(auth).getId(),id); }

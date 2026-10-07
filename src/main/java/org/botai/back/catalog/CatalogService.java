@@ -20,7 +20,7 @@ public class CatalogService {
     public TaskSnapshot snapshot(UUID version) { return repository.snapshot(version); }
     public boolean aiInputReady(UUID version) { return repository.aiInputReady(version); }
     public Solution solution(UUID version,String mediaPrefix) { var snapshot=snapshot(version);return new Solution(snapshot.referenceAnswer(),snapshot.referenceSolution(),repository.referenceContent(version,mediaPrefix),repository.referenceAnswerContent(version,mediaPrefix)); }
-    public Page<Task> list(UUID user,Integer number,String topic,String difficulty,boolean favourite,String cursor,Integer size) {
+    public Page<Task> list(UUID user,Integer number,String topic,Integer difficulty,boolean favourite,String cursor,Integer size) {
         int limit=Page.limit(size),offset=Page.offset(cursor);
         return Page.of(repository.find(user,number,topic,difficulty,favourite,offset,limit+1).stream().map(id->repository.version(id,user)).toList(),offset,limit);
     }

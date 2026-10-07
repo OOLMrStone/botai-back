@@ -21,7 +21,7 @@ cd "$TASK_ROOT"
 exec sh scripts/integration/compose.sh run --rm --no-deps -T \
     --user "$(id -u):$(id -g)" \
     --volume "$PACKAGE_ROOT:/imports:ro" --env APP_GRADING_WORKER_ENABLED=false \
-    backend --spring.profiles.active=content-import \
+    content-import --spring.profiles.active=content-import \
     --spring.flyway.enabled=false --spring.session.jdbc.cleanup-cron=- --server.address=127.0.0.1 --server.port=0 \
     --management.server.address=127.0.0.1 --management.server.port=0 \
     --logging.level.root=ERROR --spring.main.banner-mode=off \

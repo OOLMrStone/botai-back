@@ -55,4 +55,6 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    dependsOn(tasks.named("bootJar"))
+    systemProperty("botai.migration.jar", tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar").get().archiveFile.get().asFile.absolutePath)
 }

@@ -1,5 +1,12 @@
 # Импорт каталога: контракт и минимальная модель
 
+## Уточнение пользователя 2026-10-06: BankZadach и скрытые источники
+
+Разрешён импорт банка BankZadach: `provider=bankzadach`, `permissionRef=user-grant-2026-10-06-bankzadach`, `sourceGroups=["bankzadach"]`, lowercase UUID identity и точный capture URL `https://bank-zadach.ru/task/{uuid}/`. Это отдельная политика от прежнего разрешения Школково; ограничения HTTPS/host/path, assets, формул и publisher gates сохранены. Неизвестное авторство не заменяется названием поставщика.
+
+По новому решению пользователя происхождение ученику не отображается: совместимое публичное `sources=[]`, без миграции и переписывания immutable provenance, content fingerprints или прошлых попыток. `TrainingRequest.source=catalog|favorites` сохраняет прежний смысл. Указания о публичном показе первоисточников ниже являются историческими и заменены этим уточнением.
+
+
 Статус: контракт JSONL v1 для реализации, 2026-10-05. Прочитаны действующие V5/V6, `CatalogRepository`, `CatalogDtos`, `TaskSnapshot`, `ImageNormalizer`, SPEC v1.6 и инструкции соседних front/AI репозиториев; backend/родительские AGENTS.md отсутствуют. Root согласовал additive реализацию миграции/publisher/media; применение сначала pilot local, затем stage. V5/V6, прежние данные и пользовательская история сохраняются. Границы обработки недоверенного контента: [CONTENT-IMPORT-SECURITY](CONTENT-IMPORT-SECURITY.md).
 
 ## Разрешённый объём
@@ -101,3 +108,7 @@ V6 сохраняет100 оригинальных synthetic заданий, 140 
 V7 и Java publisher/media/API реализованы: итоговый Java21 full57/57 PASS, independent security PASS. Локально V7 применено и3 reviewed real tasks опубликованы; repeat noop3, оригинальные100demo и пользовательские rows сохранены. Stage остаётся на последнем подтверждённом V6/100demo/0real: SSH banner timeout, remote deployment не выполнялся. CLI `scripts/integration/publish-content.sh /absolute/package normalized/tasks.jsonl` выполняет preflight, с `--publish` — явную публикацию. Mount read-only, отдельный контейнер без host ports, worker=false с запуска, Flyway выключен: V7 применяется отдельным одобренным deployment. До него CLI не использовать. Истинный размер банка ещё не установлен;3 вручную захваченных source samples не означают полный seed.
 
 Root/security согласовали `POST /api/attempts/{attempt}/items/{item}/solution-reveal` только для extended стабильного unsupported: owner+CSRF+expectedAnswerRevision/latest submission ID+revision, без оценок и progress. Immutable grant одновременно audit event; повторы идемпотентны. GET solution и media используют единый predicate graded-current OR valid grant, включая version/asset membership. Текст/рисунок, новая submission, upload/delete/revision и staged фото делают прежний grant недействительным. Nullable rich answer, media и новый reveal требуют финальных tests/review до deployment.
+
+### Замена synthetic fixtures без потери истории (2026-10-06)
+
+Ретирация исходных V6 fixtures означает `tasks.archived=true` для точного списка100 UUID/version, не удаление версий. Каталог, избранное и новые тренировки уже исключают archived tasks. Дополнительно список доступных пробников и новый startExam исключают published templates с архивным участником; pinned старые attempts по-прежнему читают immutable version. Immutable exam template не изменяется. На frontend отсутствие доступных пробников имеет штатный empty state. Приватный guarded SQL и baseline находятся в `runtime/content-import/synthetic-retirement/`; archive script требует реальное покрытие всех20 номеров и unchanged V6 identities. Само наличие скрипта не означает его выполнения.

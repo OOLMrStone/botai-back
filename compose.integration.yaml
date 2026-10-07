@@ -73,7 +73,7 @@ services:
     cap_drop: [ALL]
   backend:
     <<: *defaults
-    build: {context: ., dockerfile: Dockerfile.integration}
+    build: {context: ., dockerfile: Dockerfile.integration, target: runtime}
     environment:
       SPRING_DOCKER_COMPOSE_ENABLED: 'false'
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/botai
@@ -102,6 +102,11 @@ services:
     read_only: true
     tmpfs: ['/tmp:rw,noexec,nosuid,size=128m']
     cap_drop: [ALL]
+  content-import:
+    extends: {service: backend}
+    profiles: [ops]
+    build: {context: ., dockerfile: Dockerfile.integration, target: content-import}
+    restart: "no"
   frontend:
     <<: *defaults
     profiles: [web]

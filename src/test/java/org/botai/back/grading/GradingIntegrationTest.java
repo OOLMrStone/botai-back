@@ -102,6 +102,31 @@ class GradingIntegrationTest {
     }
 
     UUID photographed()throws Exception{UUID id=intent(attempt(16));media.upload(user,id,image());return id;}
+    @Test void expiredUploadCanBeRetriedWithoutLosingOriginalPhotosOrDraft()throws Exception {
+        var original=attempt(16);var item=original.items().getFirst();UUID expired=intent(original);
+        var previousImage=media.upload(user,expired,image());
+        store.db().update("UPDATE grading_submissions SET updated_at=now()-interval '25 hours' WHERE id=?",expired);media.reap();
+        assertThat(store.get(user,expired).path("status").asText()).isEqualTo("expired");
+        assertThat(store.get(user,expired).path("retryable").asBoolean()).isTrue();
+        var latest=attempts.get(user,original.id());assertThat(latest.items().getFirst().submission().path("retryable").asBoolean()).isTrue();
+        var drawing=store.json().read("[{\"id\":\"draft\",\"points\":[{\"x\":1,\"y\":2}]}]");
+        var edited=attempts.patch(user,latest.id(),new AttemptDtos.Patch(latest.revision(),0,List.of(new AttemptDtos.ItemPatch(item.id(),null,drawing))));
+        int revision=edited.items().getFirst().answerRevision();assertThat(revision).isEqualTo(1);
+        String key=UUID.randomUUID().toString();var input=new SubmissionService.Intent(original.id(),item.id(),revision,expired);
+        var created=submissions.create(user,key,input);UUID retry=UUID.fromString(created.path("id").asText());
+        assertThat(retry).isNotEqualTo(expired);assertThat(created.path("status").asText()).isEqualTo("draft");assertThat(created.path("images")).isEmpty();
+        assertThat(created.path("inputRevision").asInt()).isEqualTo(revision);assertThat(created.path("revision").asInt()).isZero();
+        assertThat(submissions.create(user,key,input).path("id")).isEqualTo(created.path("id"));
+        assertThatThrownBy(()->submissions.create(user,key,new SubmissionService.Intent(original.id(),item.id(),0,expired))).isInstanceOf(ApiException.class).extracting("code").isEqualTo("idempotency_conflict");
+        var uploaded=media.upload(user,retry,image());assertThat(uploaded.path("id")).isNotEqualTo(previousImage.path("id"));
+        assertThatThrownBy(()->submissions.finalizeSubmission(user,retry,0)).isInstanceOf(ApiException.class).extracting("code").isEqualTo("revision_conflict");
+        assertThat(submissions.finalizeSubmission(user,retry,1).path("status").asText()).isEqualTo("queued");
+        assertThat(store.get(user,expired).path("images").get(0).path("id")).isEqualTo(previousImage.path("id"));
+        assertThat(media.read(user,false,UUID.fromString(previousImage.path("id").asText())).bytes()).isNotEmpty();
+        assertThat(attempts.get(user,original.id()).items().getFirst().drawing()).isEqualTo(drawing);
+        assertThat(store.db().queryForObject("SELECT retry_of_id FROM grading_submissions WHERE id=?",UUID.class,retry)).isEqualTo(expired);
+        submissions.cancel(user,retry);
+    }
     @Test void agedDraftAdmissionsChargeTodayAndRemainChargedAfterFailureOrCancellation()throws Exception {
         UUID predecessor=null;
         for(int i=0;i<30;i++){

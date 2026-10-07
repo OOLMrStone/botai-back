@@ -21,7 +21,7 @@ public class ContentPublisher {
     private final ImportPackageValidator validator;
     private final ObjectStorage storage;
     public record Outcome(String state,UUID version) { }
-    public record Report(UUID run,int published,int noop,int quarantined) { }
+    public record Report(UUID run,int published,int noop,int quarantined,Map<String,Integer> quarantineReasons) { }
     private record Candidate(JsonNode node,String reason) { }
     private record Upload(UUID id,String key) { }
 
@@ -39,7 +39,7 @@ public class ContentPublisher {
             }
             if(candidates.isEmpty())throw new ImportFailure("empty_manifest");
         } catch(ImportFailure failure) { throw failure; } catch(Exception failure) { throw new ImportFailure("manifest_read"); }
-        UUID run=UUID.randomUUID();int[] counts=new int[3];
+        UUID run=UUID.randomUUID();int[] counts=new int[3];Map<String,Integer> reasons=new TreeMap<>();
         if(publish)db.update("INSERT INTO content_import_runs(id,manifest_sha256,state) VALUES(?,?,'running')",run,hash);
         for(int ordinal=0;ordinal<candidates.size();ordinal++) {
             Candidate candidate=candidates.get(ordinal);Outcome outcome=null;String reason=candidate.reason();
@@ -58,11 +58,12 @@ public class ContentPublisher {
                 catch(Exception failure) { reason="publication_failed"; }
             }
             String state=reason==null?outcome.state():"quarantined";
+            if(reason!=null)reasons.merge(reason.matches("[a-z_]{1,64}")?reason:"validation_failed",1,Integer::sum);
             counts[state.equals("published")?0:state.equals("noop")?1:2]++;
             if(publish)db.update("INSERT INTO content_import_items(run_id,ordinal,provider,external_id,state,reason,task_version_id) VALUES(?,?,?,?,?,?,?)",run,ordinal,safe(candidate.node(),"provider"),safe(candidate.node(),"externalId"),state,reason,outcome==null?null:outcome.version());
         }
         if(publish)db.update("UPDATE content_import_runs SET state='completed',finished_at=now() WHERE id=?",run);
-        return new Report(run,counts[0],counts[1],counts[2]);
+        return new Report(run,counts[0],counts[1],counts[2],Map.copyOf(reasons));
     }
     public Outcome publish(ImportPackageValidator.Prepared prepared) {
         List<Upload> uploads=new ArrayList<>();
@@ -96,7 +97,7 @@ public class ContentPublisher {
                 Object reference=root.has("referenceContent")?publicBlocks(root.get("referenceContent"),assetIds,metadata,"reference"):List.of();
                 Object answerContent=root.has("referenceAnswerContent")?publicBlocks(root.get("referenceAnswerContent"),assetIds,metadata,"reference"):List.of();
                 Object sources=sources(root);
-                db.update("INSERT INTO task_versions(id,task_id,version,format_id,exam_number,difficulty,source_year,content,statement,reference_answer,reference_solution,is_demo,sources,reference_content,reference_answer_content,ai_input_ready) VALUES(?,?,?,?,?,?,?,?::jsonb,?,?,?,false,?::jsonb,?::jsonb,?::jsonb,?)",version,task,next,root.get("formatId").asText(),root.get("examNumber").asInt(),root.get("difficulty").asText(),root.get("sourceYear").isNull()?null:root.get("sourceYear").asInt(),content,root.get("statement").asText(),root.get("referenceAnswer").isNull()?null:root.get("referenceAnswer").asText(),root.get("referenceSolution").isNull()?null:root.get("referenceSolution").asText(),json.write(sources),json.write(reference),json.write(answerContent),prepared.aiReady());
+                db.update("INSERT INTO task_versions(id,task_id,version,format_id,exam_number,difficulty,difficulty_level,source_year,content,statement,reference_answer,reference_solution,is_demo,sources,reference_content,reference_answer_content,ai_input_ready) VALUES(?,?,?,?,?,?,?,?,?::jsonb,?,?,?,false,?::jsonb,?::jsonb,?::jsonb,?)",version,task,next,root.get("formatId").asText(),root.get("examNumber").asInt(),root.get("difficulty").isTextual()?root.get("difficulty").asText():null,root.get("difficulty").isIntegralNumber()?root.get("difficulty").asInt():null,root.get("sourceYear").isNull()?null:root.get("sourceYear").asInt(),content,root.get("statement").asText(),root.get("referenceAnswer").isNull()?null:root.get("referenceAnswer").asText(),root.get("referenceSolution").isNull()?null:root.get("referenceSolution").asText(),json.write(sources),json.write(reference),json.write(answerContent),prepared.aiReady());
                 for(var answer:root.get("acceptedAnswers"))db.update("INSERT INTO task_version_answers(task_version_id,answer) VALUES(?,?)",version,answer.asText());
                 for(var topic:root.get("topicIds"))db.update("INSERT INTO task_version_topics(task_version_id,topic_id) VALUES(?,?)",version,topic.asText());
                 db.update("INSERT INTO task_version_provenance(task_version_id,task_id,content_fingerprint,version_fingerprint,snapshot) VALUES(?,?,?,?,?::jsonb)",version,task,prepared.contentHash(),prepared.versionHash(),json.write(root.get("provenance")));

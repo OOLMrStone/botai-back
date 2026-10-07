@@ -19,7 +19,10 @@ public class ProfileService {
     public Profile get(UUID user) { return profiles.get(user); }
     @Transactional public Profile patch(UUID user,Patch patch) { profiles.patch(user,patch);return get(user); }
     public Stats stats(UUID user) {
-        var profile=get(user);LocalDate today=LocalDate.now(ZoneId.of(profile.timeZone()));
+        return stats(user,Instant.now());
+    }
+    public Stats stats(UUID user,Instant now) {
+        var profile=get(user);LocalDate today=now.atZone(ZoneId.of(profile.timeZone())).toLocalDate();
         var days=jdbc.sql("SELECT local_date,qualified,active_seconds FROM user_activity_days WHERE user_id=:user ORDER BY local_date DESC").param("user",user)
             .query((r,n)->new Day(r.getObject("local_date",LocalDate.class),r.getBoolean("qualified"),r.getInt("active_seconds")/60)).list();
         Map<LocalDate,Day> map=new HashMap<>();days.forEach(day->map.put(day.date(),day));
@@ -28,7 +31,7 @@ public class ProfileService {
         LocalDate monday=today.with(java.time.temporal.TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         List<Day> week=new ArrayList<>();for(int i=0;i<7;i++){LocalDate date=monday.plusDays(i);week.add(map.getOrDefault(date,new Day(date,false,0)));}
         int xp=jdbc.sql("SELECT count(*)*10 FROM user_task_results WHERE user_id=:user AND first_solved_at IS NOT NULL").param("user",user).query(Integer.class).single();
-        UUID resume=jdbc.sql("SELECT id FROM attempts WHERE user_id=:user AND status<>'completed' ORDER BY updated_at DESC,id DESC LIMIT 1").param("user",user).query(UUID.class).optional().orElse(null);
+        UUID resume=jdbc.sql("SELECT id FROM attempts WHERE user_id=:user AND status<>'completed' AND deleted_at IS NULL ORDER BY updated_at DESC,id DESC LIMIT 1").param("user",user).query(UUID.class).optional().orElse(null);
         return new Stats(xp,streak,profile.dailyGoalMinutes(),map.getOrDefault(today,new Day(today,false,0)).minutes(),today,profile.timeZone(),week,resume);
     }
     @Transactional public Stats activity(UUID user,Activity event) {
@@ -38,7 +41,8 @@ public class ProfileService {
             if(!existing.get().get("user").equals(user)||!existing.get().get("attempt").equals(event.attemptId())||!existing.get().get("seconds").equals(event.seconds()))throw ApiException.conflict("activity_conflict");
             return stats(user);
         }
-        Instant started=jdbc.sql("SELECT created_at FROM attempts WHERE id=:id AND user_id=:user AND status<>'completed'").param("id",event.attemptId()).param("user",user).query((r,n)->r.getTimestamp(1).toInstant()).optional().orElseThrow(ApiException::notFound);
+        if(jdbc.sql("SELECT EXISTS(SELECT 1 FROM activity_timer_state WHERE user_id=:user)").param("user",user).query(Boolean.class).single())throw ApiException.conflict("activity_timer_required");
+        Instant started=jdbc.sql("SELECT created_at FROM attempts WHERE id=:id AND user_id=:user AND status<>'completed' AND deleted_at IS NULL").param("id",event.attemptId()).param("user",user).query((r,n)->r.getTimestamp(1).toInstant()).optional().orElseThrow(ApiException::notFound);
         Instant last=jdbc.sql("SELECT created_at FROM activity_events WHERE user_id=:user ORDER BY created_at DESC LIMIT 1").param("user",user).query((r,n)->r.getTimestamp(1).toInstant()).optional().orElse(started);
         Instant earliest=last.isAfter(started)?last:started;
         int accepted=(int)Math.max(0,Math.min(Math.min(event.seconds(),60),Duration.between(earliest,Instant.now()).getSeconds()));

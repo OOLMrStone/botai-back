@@ -5,3 +5,10 @@
 !build.gradle.kts
 !src/**
 !Dockerfile.integration
+
+!scripts/
+!scripts/content_import/
+!scripts/content_import/validate-math.mjs
+!scripts/content_import/math-runtime/
+!scripts/content_import/math-runtime/package.json
+!scripts/content_import/math-runtime/package-lock.json

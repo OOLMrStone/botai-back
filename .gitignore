@@ -49,6 +49,7 @@ runtime/credentials.json
 runtime/backups/
 runtime/evidence/
 runtime/content-import/
+runtime/releases/
 
 runtime/ai-export/
 scripts/integration/__pycache__/

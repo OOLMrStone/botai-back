@@ -32,7 +32,10 @@ public class ContentImportRunner implements ApplicationRunner {
             var report=publisher.importFile(file,assets,publish);
             if(publish)System.out.println("CONTENT_IMPORT mode=publish run="+report.run()+" published="+report.published()+" noop="+report.noop()+" quarantined="+report.quarantined());
             else System.out.println("CONTENT_IMPORT mode=preflight validated="+report.noop()+" quarantined="+report.quarantined());
-            if(report.quarantined()>0)exit=2;
+            if(report.quarantined()>0) {
+                System.out.println("CONTENT_IMPORT quarantine_reasons="+report.quarantineReasons());
+                exit=2;
+            }
         } catch(ImportFailure failure) { System.out.println("CONTENT_IMPORT rejected="+failure.getMessage());exit=2; }
         int status=exit;SpringApplication.exit(context,()->status);System.exit(status);
     }

@@ -99,3 +99,7 @@ WHERE table_schema='public' ORDER BY table_name,ordinal_position;
 Структура физической схемы может быть видна в information_schema только в пределах разрешений роли. Полный introspection для администратора через локальный контейнер: `scripts/integration/compose.sh exec postgres psql -U botai_migrator -d botai`; не публиковать его credentials и не использовать migrator для обычного просмотра.
 
 Для отдельного серверного stage: `ssh -N -L localhost:23000:127.0.0.1:13000 -L localhost:28090:127.0.0.1:18090 -L localhost:28025:127.0.0.1:18025 ege-server`. Серверный backend/PG/Garage/AI уже работают, [Adminer](http://localhost:28090/?pgsql=postgres&username=botai_operator&db=botai) доступен через этот tunnel. Сайт работает на http://localhost:23000. Stage credentials отдельно `/srv/botai-integration/runtime/credentials.json`; это свежие серверные учётные данные, не локальные пароли. Серверная отдельная база также применяет V1–V6; backup/restore PostgreSQL и S3 проверен, фактическое состояние в RUNTIME-EVIDENCE.md.
+
+## Сложность после V8
+
+`operator_task_versions.difficulty_level` — точная оценка 1–5 или NULL; `is_grob` автоматически равен true только для уровня 5. Старый `difficulty` — историческая строковая метка, не актуальный числовой рейтинг. API возвращает числовой `difficulty` и `isGrob`. Старые версии и попытки сохраняются; переимпорт рейтинга создаёт новые версии.

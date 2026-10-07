@@ -73,6 +73,44 @@ class ContentImportIntegrationTest {
     String manifest(Object value) { return tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(value); }
     UUID taskId(UUID version) { return db.queryForObject("SELECT task_id FROM task_versions WHERE id=?",UUID.class,version); }
     AttemptDtos.Attempt attempt(UUID task,int number) { return attempts.startTraining(user,UUID.randomUUID().toString(),new AttemptDtos.TrainingRequest(CatalogRepository.FORMAT,List.of(new AttemptDtos.Selection(number,null,1)),null,"catalog",List.of(task))); }
+    @Test void numericDifficultyCreatesImmutableVersionsAndDerivedGrob() {
+        var root=task(7);var legacy=publish(root);var oldAttempt=attempt(taskId(legacy.version()),7);
+        root.put("difficulty",5);var rated=publish(root);var task=catalog.task(user,taskId(rated.version()));
+        assertThat(task.difficulty()).isEqualTo(5);assertThat(task.isGrob()).isTrue();
+        assertThat(db.queryForObject("SELECT is_grob FROM task_versions WHERE id=?",Boolean.class,rated.version())).isTrue();
+        assertThat(db.queryForObject("SELECT difficulty FROM task_versions WHERE id=?",String.class,legacy.version())).isEqualTo("easy");
+        assertThat(attempts.get(user,oldAttempt.id()).items().getFirst().task().difficulty()).isNull();
+        assertThat(publish(root).state()).isEqualTo("noop");
+        var response=http("GET","/api/tasks/"+task.id(),login(user),null);
+        assertThat(response.getStatusCode().value()).isEqualTo(200);assertThat(response.getBody()).contains("\"difficulty\":5","\"isGrob\":true");
+        root.put("difficulty",null);var unknown=publish(root);var unknownTask=catalog.task(user,taskId(unknown.version()));
+        assertThat(unknownTask.difficulty()).isNull();assertThat(unknownTask.isGrob()).isFalse();assertThat(json.write(unknownTask)).contains("\"difficulty\":null");
+        assertThat(catalog.version(user,rated.version()).difficulty()).isEqualTo(5);
+        for(Object invalid:List.of(0,6,2.5,true)) {
+            root.put("difficulty",invalid);
+            assertThatThrownBy(()->validator.validate(validator.parse(manifest(root)),files)).isInstanceOf(ImportFailure.class);
+        }
+    }
+    @Test void trainingEndpointsUnknownFallbackAndCatalogNumericFilterAgree() {
+        String topic="difficulty-"+UUID.randomUUID();
+        db.update("INSERT INTO topics(id,format_id,exam_number,title,source_url,sort_order) VALUES(?, ?,7,'Difficulty test','https://example.test',999)",topic,CatalogRepository.FORMAT);
+        var taskIds=new ArrayList<UUID>();
+        for(int level=0;level<=5;level++) {
+            var root=task(7);root.put("topicIds",List.of(topic));root.put("difficulty",level==0?null:level);
+            taskIds.add(taskId(publish(root).version()));
+        }
+        java.util.function.BiFunction<Integer,Integer,AttemptDtos.TrainingRequest> request=(preference,count)->new AttemptDtos.TrainingRequest(CatalogRepository.FORMAT,List.of(new AttemptDtos.Selection(7,List.of(topic),count)),null,"catalog",null,preference);
+        var easy=attempts.startTraining(user,"numeric-easy",request.apply(0,1));assertThat(easy.items()).allMatch(i->Objects.equals(i.task().difficulty(),1));
+        var hard=attempts.startTraining(user,"numeric-hard",request.apply(100,2));assertThat(hard.items()).allMatch(i->i.task().difficulty()>=4);
+        assertThatThrownBy(()->attempts.startTraining(user,"numeric-short",request.apply(0,2))).isInstanceOf(ApiException.class).extracting("code").isEqualTo("insufficient_tasks");
+        var middle=attempts.startTraining(user,"numeric-middle",request.apply(50,6));assertThat(middle.items().getLast().task().difficulty()).isNull();
+        assertThat(middle.items().subList(0,5)).allMatch(i->i.task().difficulty()!=null);
+        assertThat(attempts.startTraining(user,"numeric-middle",request.apply(50,6)).id()).isEqualTo(middle.id());
+        assertThat(catalog.list(user,7,topic,5,false,null,20).items()).singleElement().satisfies(t->assertThat(t.isGrob()).isTrue());
+        catalog.favourite(user,taskIds.get(5),true);
+        var favorite=new AttemptDtos.TrainingRequest(CatalogRepository.FORMAT,List.of(new AttemptDtos.Selection(7,List.of(topic),1)),null,"favorites",null,100);
+        assertThat(attempts.startTraining(user,"numeric-favourite",favorite).items().getFirst().task().id()).isEqualTo(taskIds.get(5));
+    }
     @Test void replaysNullableYearAndChangedVersionsPreservePinnedAttempts() {
         var root=task(7);var first=publish(root);var attempt=attempt(taskId(first.version()),7);
         assertThat(publish(root).state()).isEqualTo("noop");
@@ -82,6 +120,36 @@ class ContentImportIntegrationTest {
         var pinned=attempts.get(user,attempt.id()).items().getFirst().task();assertThat(pinned.taskVersionId()).isEqualTo(first.version());assertThat(pinned.content().get(0).path("value").asText()).isEqualTo("Compute 1+1");
         assertThatThrownBy(()->db.update("UPDATE task_version_provenance SET snapshot='{}'::jsonb WHERE task_version_id=?",first.version())).hasMessageContaining("immutable content");
         assertThat(db.queryForObject("SELECT count(*) FROM task_versions WHERE is_demo",Integer.class)).isEqualTo(100);
+    }
+    @Test void bankzadachPolicyPublishesIdempotentlyAndRejectsCrossProviderProvenance() {
+        var root=task(7);String id=UUID.randomUUID().toString();root.put("provider","bankzadach");root.put("externalId",id);
+        var provenance=(Map<String,Object>)root.get("provenance");provenance.put("sourceUrl","https://bank-zadach.ru/task/"+id+"/");
+        provenance.put("sourceGroups",List.of("bankzadach"));provenance.put("permissionRef",ImportPackageValidator.BANKZADACH_GRANT);
+        var first=publish(root);assertThat(publish(root).state()).isEqualTo("noop");
+        assertThat(catalog.task(user,taskId(first.version())).sources().isEmpty()).isTrue();
+        assertThat(db.queryForObject("SELECT count(*) FROM task_source_links WHERE provider='bankzadach' AND external_id=?",Integer.class,id)).isEqualTo(1);
+        provenance.put("permissionRef",ImportPackageValidator.GRANT);
+        assertThatThrownBy(()->validator.validate(validator.parse(manifest(root)),files)).hasMessage("permission_scope");
+        provenance.put("permissionRef",ImportPackageValidator.BANKZADACH_GRANT);provenance.put("sourceGroups",List.of("fipi"));
+        assertThatThrownBy(()->validator.validate(validator.parse(manifest(root)),files)).hasMessage("source_scope");
+        provenance.put("sourceGroups",List.of("bankzadach"));
+        for(String url:List.of("https://bank-zadach.ru/task/"+UUID.randomUUID()+"/","https://evil.test/task/"+id+"/","https://bank-zadach.ru/task/"+id+"/?x=1","https://bank-zadach.ru/task/"+id+"/#x","https://bank-zadach.ru/task/"+id+"/%2e%2e/")) {
+            provenance.put("sourceUrl",url);assertThatThrownBy(()->validator.validate(validator.parse(manifest(root)),files)).hasMessage("source_url");
+        }
+    }
+    @Test void archivedTemplateMemberStopsNewExamsButPreservesPinnedAttempts() {
+        UUID template=db.queryForObject("SELECT id FROM exam_templates WHERE published AND is_demo LIMIT 1",UUID.class);
+        UUID task=db.queryForObject("SELECT v.task_id FROM exam_template_items i JOIN task_versions v ON v.id=i.task_version_id WHERE i.template_id=? ORDER BY i.ordinal LIMIT 1",UUID.class,template);
+        var existing=attempts.startExam(user,template,UUID.randomUUID().toString());
+        try {
+            db.update("UPDATE tasks SET archived=true WHERE id=?",task);
+            assertThat(attempts.exams(user,null,50).items()).noneMatch(exam->exam.id().equals(template));
+            assertThatThrownBy(()->attempts.startExam(user,template,UUID.randomUUID().toString())).isInstanceOf(ApiException.class);
+            assertThatThrownBy(()->catalog.task(user,task)).isInstanceOf(ApiException.class);
+            assertThat(attempts.get(user,existing.id()).items()).hasSize(20);
+            assertThat(attempts.get(user,existing.id()).items().getFirst().task().id()).isEqualTo(task);
+        } finally { db.update("UPDATE tasks SET archived=false WHERE id=?",task); }
+        assertThat(attempts.exams(user,null,50).items()).anyMatch(exam->exam.id().equals(template));
     }
     @Test void concurrentSameIdentityPublishesExactlyOnce()throws Exception {
         var prepared=validator.validate(validator.parse(manifest(task(7))),files);
@@ -121,8 +189,8 @@ class ContentImportIntegrationTest {
         assertThat(db.queryForObject("SELECT count(*) FROM grading_jobs WHERE submission_id=?",Integer.class,id)).isZero();
     }
     @Test void malformedOutOfScopeCrossNumberAndDuplicateBatchStayUnpublished()throws Exception {
-        var wrong=task(7);wrong.put("topicIds",List.of("sdamgia-166"));Path file=files.resolve("tasks.jsonl");Files.writeString(file,manifest(wrong)+"\n");var report=publisher.importFile(file,files,true);assertThat(report.quarantined()).isEqualTo(1);
-        var root=task(7);Files.writeString(file,manifest(root)+"\n"+manifest(root)+"\n");report=publisher.importFile(file,files,true);assertThat(report.quarantined()).isEqualTo(2);assertThat(report.published()).isZero();
+        var wrong=task(7);wrong.put("topicIds",List.of("sdamgia-166"));Path file=files.resolve("tasks.jsonl");Files.writeString(file,manifest(wrong)+"\n");var report=publisher.importFile(file,files,true);assertThat(report.quarantined()).isEqualTo(1);assertThat(report.quarantineReasons()).containsExactlyEntriesOf(Map.of("topic_mapping",1));
+        var root=task(7);Files.writeString(file,manifest(root)+"\n"+manifest(root)+"\n");report=publisher.importFile(file,files,true);assertThat(report.quarantined()).isEqualTo(2);assertThat(report.published()).isZero();assertThat(report.quarantineReasons()).containsExactlyEntriesOf(Map.of("duplicate_identity",2));
         assertThatThrownBy(()->validator.parse("{\"provider\":\"a\",\"provider\":\"b\"}")).isInstanceOf(ImportFailure.class);
         root.put("extra",true);assertThatThrownBy(()->validator.validate(validator.parse(manifest(root)),files)).hasMessage("unknown_field");root.remove("extra");
         ((Map<String,Object>)root.get("provenance")).put("sourceGroups",List.of("author"));assertThatThrownBy(()->validator.validate(validator.parse(manifest(root)),files)).hasMessage("source_scope");

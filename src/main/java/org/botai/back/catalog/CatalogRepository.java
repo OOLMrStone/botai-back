@@ -40,21 +40,21 @@ public class CatalogRepository {
             SELECT v.*,p.part,p.response_type,p.max_points,
               EXISTS(SELECT 1 FROM user_favourites f WHERE f.user_id=:user AND f.task_id=v.task_id) favourite,
               CASE WHEN EXISTS(SELECT 1 FROM user_task_results r WHERE r.user_id=:user AND r.task_id=v.task_id AND r.first_solved_at IS NOT NULL) THEN 'solved'
-                   WHEN EXISTS(SELECT 1 FROM attempt_items i JOIN attempts a ON a.id=i.attempt_id JOIN task_versions vi ON vi.id=i.task_version_id WHERE a.user_id=:user AND vi.task_id=v.task_id AND (i.answer<>'' OR i.drawing<>'[]'::jsonb OR EXISTS(SELECT 1 FROM grading_submissions s WHERE s.attempt_item_id=i.id))) THEN 'in-progress'
+                   WHEN EXISTS(SELECT 1 FROM attempt_items i JOIN attempts a ON a.id=i.attempt_id JOIN task_versions vi ON vi.id=i.task_version_id WHERE a.user_id=:user AND a.deleted_at IS NULL AND vi.task_id=v.task_id AND (i.answer<>'' OR i.drawing<>'[]'::jsonb OR EXISTS(SELECT 1 FROM grading_submissions s WHERE s.attempt_item_id=i.id))) THEN 'in-progress'
                    ELSE 'unstarted' END progress
             FROM task_versions v JOIN exam_positions p USING(format_id,exam_number) WHERE v.id=:version
             """).param("user",userId).param("version",versionId).query((r,n)->new Task(r.getObject("task_id",UUID.class),versionId,r.getInt("version"),r.getInt("exam_number"),r.getInt("part"),
                 jdbc.sql("SELECT topic_id FROM task_version_topics WHERE task_version_id=:id ORDER BY topic_id").param("id",versionId).query(String.class).list(),
-                r.getString("difficulty"),r.getString("response_type"),r.getInt("max_points"),json.read(r.getString("content")),r.getBoolean("favourite"),r.getString("progress"),
+                r.getObject("difficulty_level",Integer.class),r.getBoolean("is_grob"),r.getString("response_type"),r.getInt("max_points"),json.read(r.getString("content")),r.getBoolean("favourite"),r.getString("progress"),
                 r.getInt("exam_number")>=14&&!r.getBoolean("ai_input_ready")?"unsupported":capabilities.forNumber(r.getInt("exam_number"),r.getInt("max_points")),r.getBoolean("is_demo"),r.getObject("source_year",Integer.class),CatalogSources.project(json.read(r.getString("sources")),json))).optional().orElseThrow(ApiException::notFound);
     }
-    public List<UUID> find(UUID user,Integer number,String topic,String difficulty,boolean favourites,int offset,int limit) {
+    public List<UUID> find(UUID user,Integer number,String topic,Integer difficulty,boolean favourites,int offset,int limit) {
         if(number!=null&&(number<1||number>20))throw ApiException.invalid("Номер задания от 1 до 20");
-        if(difficulty!=null&&!List.of("easy","medium","hard").contains(difficulty))throw ApiException.invalid("Неизвестная сложность");
+        if(difficulty!=null&&(difficulty<1||difficulty>5))throw ApiException.invalid("Неизвестная сложность");
         String sql="SELECT v.id FROM tasks t JOIN task_versions v ON v.id=t.current_version_id WHERE NOT t.archived";
         if(number!=null)sql+=" AND v.exam_number=:number";
         if(topic!=null)sql+=" AND EXISTS(SELECT 1 FROM task_version_topics vt WHERE vt.task_version_id=v.id AND vt.topic_id=:topic)";
-        if(difficulty!=null)sql+=" AND v.difficulty=:difficulty";
+        if(difficulty!=null)sql+=" AND v.difficulty_level=:difficulty";
         if(favourites)sql+=" AND EXISTS(SELECT 1 FROM user_favourites f WHERE f.user_id=:user AND f.task_id=t.id)";
         return jdbc.sql(sql+" ORDER BY v.exam_number,t.id LIMIT :limit OFFSET :offset").param("number",number).param("topic",topic).param("difficulty",difficulty)
             .param("user",user).param("limit",limit).param("offset",offset).query(UUID.class).list();
